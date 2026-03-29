@@ -18,16 +18,12 @@ var playerPiece string
 var clientID string
 
 // initialCol is the column supplied on the command line, sent as the first
-// move once sc_notify_start confirms the game has started and it is our turn.
+// move immediately after sc_ack_connect confirms the connection.
 var initialCol int
 
 // serverConn is the active connection to the server, stored so that
 // handlers can send messages without passing conn through the dispatcher chain.
 var serverConn net.Conn
-
-// initialMoveSent tracks whether the startup column argument has been played.
-// Once true, subsequent moves must be entered manually via stdin.
-var initialMoveSent bool
 
 // Message is the common envelope for all wire protocol messages.
 type Message struct {
@@ -134,9 +130,8 @@ func parseAndSend(conn net.Conn, line string) {
 }
 
 // handleAckConnect handles a sc_ack_connect message from the server.
-// Confirms whether the connection was accepted or rejected, and if accepted,
-// immediately sends the initial move so the server can process it before the
-// second player connects.
+// On success, immediately sends the initial move so the server can process it
+// before the second player connects. On failure, prints INVALID and exits.
 func handleAckConnect(data json.RawMessage) {
 	var payload struct {
 		Success bool   `json:"success"`
@@ -144,39 +139,34 @@ func handleAckConnect(data json.RawMessage) {
 		Reason  string `json:"reason"`
 	}
 	if err := json.Unmarshal(data, &payload); err != nil {
-		fmt.Fprintln(os.Stderr, "[handleAckConnect] failed to parse payload:", err)
-		return
+		fmt.Fprintln(os.Stderr, "failed to parse sc_ack_connect:", err)
+		os.Exit(1)
 	}
 	if !payload.Success {
-		fmt.Fprintf(os.Stderr, "[handleAckConnect] connection rejected: %s\n", payload.Reason)
-		return
+		fmt.Println("INVALID")
+		os.Exit(1)
 	}
-	fmt.Printf("[handleAckConnect] connected as player %s, sending initial move (column %d)\n", payload.Player, initialCol)
 	if err := sendMove(serverConn, clientID, initialCol); err != nil {
-		fmt.Fprintln(os.Stderr, "[handleAckConnect] sendMove error:", err)
-		return
+		fmt.Fprintln(os.Stderr, "sendMove error:", err)
+		os.Exit(1)
 	}
-	initialMoveSent = true
 }
 
 // handleNotifyStart handles a sc_notify_start message from the server.
-// Signals that both players have connected and the game is ready to begin.
-// The initial move was already sent in handleAckConnect; this just logs the state.
+// Signals that both players have connected. The initial move was already sent
+// in handleAckConnect; nothing needs to be printed here.
 func handleNotifyStart(data json.RawMessage) {
-	var payload struct {
-		Opponent  string `json:"opponent"`
-		FirstTurn string `json:"first_turn"`
-		Board     string `json:"board"`
-	}
-	if err := json.Unmarshal(data, &payload); err != nil {
-		fmt.Fprintln(os.Stderr, "[handleNotifyStart] failed to parse payload:", err)
-		return
-	}
-	fmt.Printf("[handleNotifyStart] game started — opponent: %s, next turn: %s\n%s\n", payload.Opponent, payload.FirstTurn, payload.Board)
+	// Both players now connected; output will arrive via sc_ack_move.
 }
 
 // handleAckMove handles a sc_ack_move message from the server.
-// Contains the updated board state after a valid move was applied.
+// Prints the updated board state after a valid move.
+//
+// Output:
+//
+//	OK NEXT <X|O>    (status "OK")
+//	OK DRAW          (status "DRAW")
+//	<board>
 func handleAckMove(data json.RawMessage) {
 	var payload struct {
 		Status string `json:"status"`
@@ -184,28 +174,65 @@ func handleAckMove(data json.RawMessage) {
 		Board  string `json:"board"`
 	}
 	if err := json.Unmarshal(data, &payload); err != nil {
-		fmt.Fprintln(os.Stderr, "[handleAckMove] failed to parse payload:", err)
+		fmt.Fprintln(os.Stderr, "failed to parse sc_ack_move:", err)
 		return
 	}
-	fmt.Printf("[handleAckMove] status: %s, next: %s\n%s\n", payload.Status, payload.Next, payload.Board)
+	switch payload.Status {
+	case "OK":
+		fmt.Printf("OK NEXT %s\n%s", payload.Next, payload.Board)
+	case "DRAW":
+		fmt.Printf("OK DRAW\n%s", payload.Board)
+	}
 }
 
 // handleNotifyWin handles a sc_notify_win message from the server.
-// Signals that a winning move has been made and the game is over.
+// Prints the winning player and final board state.
+//
+// Output:
+//
+//	OK WIN <X|O>
+//	<board>
 func handleNotifyWin(data json.RawMessage) {
-	fmt.Println("[handleNotifyWin] Processing win notification from server")
+	var payload struct {
+		Winner string `json:"winner"`
+		Board  string `json:"board"`
+	}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		fmt.Fprintln(os.Stderr, "failed to parse sc_notify_win:", err)
+		return
+	}
+	fmt.Printf("OK WIN %s\n%s", payload.Winner, payload.Board)
 }
 
 // handleAckInvalid handles a sc_ack_invalid message from the server.
-// Sent when this client submitted an invalid or out-of-turn move.
+// Prints INVALID for rejected moves, or a descriptive ERROR if the game is over.
 func handleAckInvalid(data json.RawMessage) {
-	fmt.Println("[handleAckInvalid] Processing invalid move response from server")
+	var payload struct {
+		Reason string `json:"reason"`
+	}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		fmt.Fprintln(os.Stderr, "failed to parse sc_ack_invalid:", err)
+		return
+	}
+	if payload.Reason == "game is already over" {
+		fmt.Println("ERROR game is already over, restart the server to play again")
+		os.Exit(1)
+	}
+	fmt.Println("INVALID")
 }
 
 // handleNotifyError handles a sc_notify_error message from the server.
 // Sent when an unexpected event (e.g. opponent disconnected) terminates the session.
 func handleNotifyError(data json.RawMessage) {
-	fmt.Println("[handleNotifyError] Processing error notification from server")
+	var payload struct {
+		Reason string `json:"reason"`
+	}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		fmt.Fprintln(os.Stderr, "failed to parse sc_notify_error:", err)
+		os.Exit(1)
+	}
+	fmt.Printf("ERROR %s\n", payload.Reason)
+	os.Exit(1)
 }
 
 // handleMessages reads newline-delimited JSON messages from conn and dispatches
@@ -247,10 +274,15 @@ func main() {
 	}
 
 	playerPiece = os.Args[1]
+	if playerPiece != "X" && playerPiece != "O" {
+		fmt.Println("INVALID")
+		os.Exit(1)
+	}
+
 	var err error
 	initialCol, err = strconv.Atoi(os.Args[2])
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "invalid column:", os.Args[2])
+		fmt.Println("INVALID")
 		os.Exit(1)
 	}
 	serverAddr := os.Args[3]
@@ -264,10 +296,9 @@ func main() {
 
 	// Use the local TCP address as a stable unique identifier for this session.
 	clientID = serverConn.LocalAddr().String()
-	fmt.Printf("Connected to %s as player %s (id: %s)\n", serverAddr, playerPiece, clientID)
 
-	// Announce desired piece and identity. The initial move is deferred until
-	// sc_notify_start confirms both players are connected and it is our turn.
+	// Announce desired piece and identity. The initial move is sent immediately
+	// upon receiving sc_ack_connect, before the second player connects.
 	if err := sendConnect(serverConn, playerPiece, clientID); err != nil {
 		fmt.Fprintln(os.Stderr, "sendConnect error:", err)
 		os.Exit(1)

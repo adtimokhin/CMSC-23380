@@ -400,7 +400,7 @@ func main() {
 	}
 	defer ln.Close()
 
-	fmt.Printf("Listening on port %s (board %dx%d, M=%d)\n", os.Args[1], boardRows, boardCols, boardM)
+	fmt.Printf("Connect-M server listening on port %s with board size %dx%d and connect-%d win condition\n", os.Args[1], boardRows, boardCols, boardM)
 
 	for {
 		conn, err := ln.Accept()
