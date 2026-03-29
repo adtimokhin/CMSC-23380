@@ -6,8 +6,17 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strconv"
 	"sync"
+
+	"connectm/game"
 )
+
+// gameMu protects all shared game state below.
+var gameMu sync.Mutex
+
+// board is the single game instance, created when the first client connects.
+var board *game.Board
 
 // playerRegistry maps client id → assigned piece ("X" or "O").
 var playerRegistry = map[string]string{}
@@ -15,8 +24,22 @@ var playerRegistry = map[string]string{}
 // takenPieces tracks which pieces are currently claimed.
 var takenPieces = map[string]bool{}
 
-// registryMu protects playerRegistry and takenPieces from concurrent access.
-var registryMu sync.Mutex
+// playerConns maps piece ("X" or "O") → the connection of that player,
+// used for broadcasting messages to both clients.
+var playerConns = map[string]net.Conn{}
+
+// firstPlayer is the piece of the client that connected first; they move first.
+var firstPlayer = ""
+
+// currentTurn holds which piece ("X" or "O") must move next.
+// Set to firstPlayer once both clients have connected.
+var currentTurn = ""
+
+// gameOver is true after a win or draw; further moves are rejected.
+var gameOver = false
+
+// boardRows, boardCols, boardM are parsed from command-line arguments.
+var boardRows, boardCols, boardM int
 
 // Message is the common envelope for all wire protocol messages.
 type Message struct {
@@ -34,6 +57,20 @@ func sendMessage(conn net.Conn, msg Message) error {
 	return err
 }
 
+// broadcast sends msg to the provided connections. Errors are printed but do
+// not abort delivery to the other connection. The caller must collect the
+// target connections before calling broadcast (do not hold gameMu when calling,
+// as sendMessage performs I/O that must not block under the lock).
+func broadcast(msg Message, conns []net.Conn) {
+	for _, c := range conns {
+		if c != nil {
+			if err := sendMessage(c, msg); err != nil {
+				fmt.Fprintln(os.Stderr, "broadcast error:", err)
+			}
+		}
+	}
+}
+
 // sendAckConnect sends a sc_ack_connect message to a client, confirming whether
 // the connection was accepted or rejected.
 //
@@ -47,7 +84,7 @@ func sendMessage(conn net.Conn, msg Message) error {
 //   - "player O is already taken"
 //   - "invalid player, must be X or O"
 func sendAckConnect(conn net.Conn, success bool, player, reason string) error {
-	data, err := json.Marshal(map[string]interface{}{
+	data, err := json.Marshal(map[string]any{
 		"success": success,
 		"player":  player,
 		"reason":  reason,
@@ -63,12 +100,13 @@ func sendAckConnect(conn net.Conn, success bool, player, reason string) error {
 //
 // Format:
 //
-//	{"type": "sc_notify_start", "data": {"opponent": "<X|O>", "first_turn": "X"}}
+//	{"type": "sc_notify_start", "data": {"opponent": "<X|O>", "first_turn": "<X|O>", "board": "<string>"}}
 //
 // opponent is the piece of the opposing player ("X" or "O").
-// first_turn is always "X" per Connect-M rules.
-func sendNotifyStart(conn net.Conn, opponent string, firstTurn string) error {
-	data, err := json.Marshal(map[string]string{"opponent": opponent, "first_turn": firstTurn})
+// first_turn is whose turn it is next (the first player has already moved).
+// board is the current board state after the first player's opening move.
+func sendNotifyStart(conn net.Conn, opponent string, firstTurn string, boardStr string) error {
+	data, err := json.Marshal(map[string]string{"opponent": opponent, "first_turn": firstTurn, "board": boardStr})
 	if err != nil {
 		return err
 	}
@@ -85,8 +123,8 @@ func sendNotifyStart(conn net.Conn, opponent string, firstTurn string) error {
 // status is "OK" for a normal move, or "DRAW" if the board is full with no winner.
 // next is whose turn it is next; empty string if the game is over.
 // board is the full board string as produced by game.go's Board.String() method.
-func sendAckMove(conn net.Conn, status string, next string, board string) error {
-	data, err := json.Marshal(map[string]string{"status": status, "next": next, "board": board})
+func sendAckMove(conn net.Conn, status string, next string, boardStr string) error {
+	data, err := json.Marshal(map[string]string{"status": status, "next": next, "board": boardStr})
 	if err != nil {
 		return err
 	}
@@ -102,8 +140,8 @@ func sendAckMove(conn net.Conn, status string, next string, board string) error 
 //
 // winner is the piece that won ("X" or "O").
 // board is the final board state as produced by game.go's Board.String() method.
-func sendNotifyWin(conn net.Conn, winner string, board string) error {
-	data, err := json.Marshal(map[string]string{"winner": winner, "board": board})
+func sendNotifyWin(conn net.Conn, winner string, boardStr string) error {
+	data, err := json.Marshal(map[string]string{"winner": winner, "board": boardStr})
 	if err != nil {
 		return err
 	}
@@ -144,8 +182,8 @@ func sendNotifyError(conn net.Conn, reason string) error {
 }
 
 // handleSendConnect handles a cs_send_connect message from a client.
-// Parses the requested piece and client id, checks whether the piece is
-// available, and registers the id → piece mapping on success.
+// On the first connection the game board is created. On the second connection
+// sc_notify_start is broadcast to both players.
 func handleSendConnect(conn net.Conn, data json.RawMessage) {
 	var payload struct {
 		Player string `json:"player"`
@@ -163,24 +201,71 @@ func handleSendConnect(conn net.Conn, data json.RawMessage) {
 		return
 	}
 
-	registryMu.Lock()
-	defer registryMu.Unlock()
+	gameMu.Lock()
 
 	if takenPieces[payload.Player] {
+		gameMu.Unlock()
 		fmt.Printf("[handleSendConnect] piece %s already taken, rejecting id %s\n", payload.Player, payload.ID)
 		sendAckConnect(conn, false, "", "player "+payload.Player+" is already taken")
 		return
 	}
 
+	// Register the player.
 	playerRegistry[payload.ID] = payload.Player
 	takenPieces[payload.Player] = true
+	playerConns[payload.Player] = conn
+
+	// Create the board and record the first player on first connection.
+	// currentTurn is set immediately so the first player can move before the
+	// second player connects.
+	if board == nil {
+		board = game.NewBoard(boardRows, boardCols, boardM)
+		firstPlayer = payload.Player
+		currentTurn = payload.Player
+		fmt.Printf("[handleSendConnect] game created (%dx%d, M=%d), first player: %s\n", boardRows, boardCols, boardM, firstPlayer)
+	}
+
+	bothConnected := takenPieces["X"] && takenPieces["O"]
+	connX := playerConns["X"]
+	connO := playerConns["O"]
+	var boardStr, nextTurn string
+	if bothConnected {
+		boardStr = board.String()
+		nextTurn = currentTurn
+	}
+	gameMu.Unlock()
+
 	fmt.Printf("[handleSendConnect] registered id %s as player %s\n", payload.ID, payload.Player)
 	sendAckConnect(conn, true, payload.Player, "")
+
+	// If both players are now connected, send sc_notify_start to each.
+	// The board already reflects the first player's opening move.
+	if bothConnected {
+		fmt.Println("[handleSendConnect] both players connected, broadcasting start")
+		sendNotifyStart(connX, "O", nextTurn, boardStr)
+		sendNotifyStart(connO, "X", nextTurn, boardStr)
+	}
+}
+
+// pieceToPlayer converts a string piece to a game.Player value.
+func pieceToPlayer(piece string) game.Player {
+	if piece == "X" {
+		return game.Player1
+	}
+	return game.Player2
+}
+
+// playerToPiece converts a game.Player value back to its string piece.
+func playerToPiece(p game.Player) string {
+	if p == game.Player1 {
+		return "X"
+	}
+	return "O"
 }
 
 // handleSendMove handles a cs_send_move message from a client.
-// Parses the client id and column, looks up the player piece from the registry,
-// and processes the move.
+// Validates turn order, applies the move, then broadcasts sc_ack_move or
+// sc_notify_win to both clients.
 func handleSendMove(conn net.Conn, data json.RawMessage) {
 	var payload struct {
 		ID     string `json:"id"`
@@ -191,17 +276,74 @@ func handleSendMove(conn net.Conn, data json.RawMessage) {
 		return
 	}
 
-	registryMu.Lock()
-	piece, ok := playerRegistry[payload.ID]
-	registryMu.Unlock()
+	gameMu.Lock()
 
+	piece, ok := playerRegistry[payload.ID]
 	if !ok {
+		gameMu.Unlock()
 		fmt.Printf("[handleSendMove] unknown client id %s\n", payload.ID)
 		sendAckInvalid(conn, "client not registered")
 		return
 	}
 
-	fmt.Printf("[handleSendMove] player %s (id %s) wants column %d\n", piece, payload.ID, payload.Column)
+	if gameOver {
+		gameMu.Unlock()
+		sendAckInvalid(conn, "game is already over")
+		return
+	}
+
+	if piece != currentTurn {
+		gameMu.Unlock()
+		sendAckInvalid(conn, "it is not your turn")
+		return
+	}
+
+	// Convert 1-indexed column from client to 0-indexed for game package.
+	col0 := payload.Column - 1
+	_, err := board.MakeMove(col0, pieceToPlayer(piece))
+	if err != nil {
+		gameMu.Unlock()
+		// Translate game-level errors to protocol reasons.
+		reason := err.Error()
+		if reason == "column out of bounds" {
+			reason = "column out of range"
+		}
+		sendAckInvalid(conn, reason)
+		return
+	}
+
+	fmt.Printf("[handleSendMove] player %s played column %d\n", piece, payload.Column)
+
+	boardStr := board.String()
+	allConns := []net.Conn{playerConns["X"], playerConns["O"]}
+
+	if board.CheckWin() {
+		gameOver = true
+		gameMu.Unlock()
+		winData, _ := json.Marshal(map[string]string{"winner": piece, "board": boardStr})
+		broadcast(Message{Type: "sc_notify_win", Data: winData}, allConns)
+		return
+	}
+
+	if board.IsFull() {
+		gameOver = true
+		gameMu.Unlock()
+		ackData, _ := json.Marshal(map[string]string{"status": "DRAW", "next": "", "board": boardStr})
+		broadcast(Message{Type: "sc_ack_move", Data: ackData}, allConns)
+		return
+	}
+
+	// Advance turn.
+	if currentTurn == "X" {
+		currentTurn = "O"
+	} else {
+		currentTurn = "X"
+	}
+	next := currentTurn
+	gameMu.Unlock()
+
+	ackData, _ := json.Marshal(map[string]string{"status": "OK", "next": next, "board": boardStr})
+	broadcast(Message{Type: "sc_ack_move", Data: ackData}, allConns)
 }
 
 // handleMessages reads newline-delimited JSON messages from conn and dispatches
@@ -229,8 +371,25 @@ func handleMessages(conn net.Conn) {
 }
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: server <port>")
+	if len(os.Args) < 5 {
+		fmt.Fprintln(os.Stderr, "usage: server <port> <rows> <cols> <M>")
+		os.Exit(1)
+	}
+
+	var err error
+	boardRows, err = strconv.Atoi(os.Args[2])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "invalid rows:", os.Args[2])
+		os.Exit(1)
+	}
+	boardCols, err = strconv.Atoi(os.Args[3])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "invalid cols:", os.Args[3])
+		os.Exit(1)
+	}
+	boardM, err = strconv.Atoi(os.Args[4])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "invalid M:", os.Args[4])
 		os.Exit(1)
 	}
 
@@ -241,7 +400,7 @@ func main() {
 	}
 	defer ln.Close()
 
-	fmt.Println("Listening on port", os.Args[1])
+	fmt.Printf("Listening on port %s (board %dx%d, M=%d)\n", os.Args[1], boardRows, boardCols, boardM)
 
 	for {
 		conn, err := ln.Accept()
