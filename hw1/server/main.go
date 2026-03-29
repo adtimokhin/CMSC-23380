@@ -1,10 +1,167 @@
 package main
 
 import (
+	"bufio"
+	"encoding/json"
 	"fmt"
 	"net"
 	"os"
 )
+
+// Message is the common envelope for all wire protocol messages.
+type Message struct {
+	Type string          `json:"type"`
+	Data json.RawMessage `json:"data"`
+}
+
+// sendMessage encodes msg as JSON and writes it to conn followed by a newline.
+func sendMessage(conn net.Conn, msg Message) error {
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(conn, "%s\n", data)
+	return err
+}
+
+// sendAckConnect sends a sc_ack_connect message to a client, confirming whether
+// the connection was accepted or rejected.
+//
+// Format:
+//
+//	{"type": "sc_ack_connect", "data": {"success": <bool>, "reason": "<string>"}}
+//
+// On success, reason must be an empty string.
+// On failure, reason is one of: "game is full", "player X is already taken",
+// "invalid player, must be X or O".
+func sendAckConnect(conn net.Conn, success bool, reason string) error {
+	data, err := json.Marshal(map[string]interface{}{"success": success, "reason": reason})
+	if err != nil {
+		return err
+	}
+	return sendMessage(conn, Message{Type: "sc_ack_connect", Data: data})
+}
+
+// sendNotifyStart sends a sc_notify_start message to a client when both players
+// have connected and the game is ready to begin. Must be sent to both clients.
+//
+// Format:
+//
+//	{"type": "sc_notify_start", "data": {"opponent": "<X|O>", "first_turn": "X"}}
+//
+// opponent is the piece of the opposing player ("X" or "O").
+// first_turn is always "X" per Connect-M rules.
+func sendNotifyStart(conn net.Conn, opponent string, firstTurn string) error {
+	data, err := json.Marshal(map[string]string{"opponent": opponent, "first_turn": firstTurn})
+	if err != nil {
+		return err
+	}
+	return sendMessage(conn, Message{Type: "sc_notify_start", Data: data})
+}
+
+// sendAckMove sends a sc_ack_move message to both clients after a valid move is
+// applied, containing the updated board state.
+//
+// Format:
+//
+//	{"type": "sc_ack_move", "data": {"status": "<OK|DRAW>", "next": "<X|O|>", "board": "<string>"}}
+//
+// status is "OK" for a normal move, or "DRAW" if the board is full with no winner.
+// next is whose turn it is next; empty string if the game is over.
+// board is the full board string as produced by game.go's Board.String() method.
+func sendAckMove(conn net.Conn, status string, next string, board string) error {
+	data, err := json.Marshal(map[string]string{"status": status, "next": next, "board": board})
+	if err != nil {
+		return err
+	}
+	return sendMessage(conn, Message{Type: "sc_ack_move", Data: data})
+}
+
+// sendNotifyWin sends a sc_notify_win message to both clients when a winning
+// move is made.
+//
+// Format:
+//
+//	{"type": "sc_notify_win", "data": {"winner": "<X|O>", "board": "<string>"}}
+//
+// winner is the piece that won ("X" or "O").
+// board is the final board state as produced by game.go's Board.String() method.
+func sendNotifyWin(conn net.Conn, winner string, board string) error {
+	data, err := json.Marshal(map[string]string{"winner": winner, "board": board})
+	if err != nil {
+		return err
+	}
+	return sendMessage(conn, Message{Type: "sc_notify_win", Data: data})
+}
+
+// sendAckInvalid sends a sc_ack_invalid message only to the client that
+// submitted an invalid or out-of-turn move. The game state is unchanged.
+//
+// Format:
+//
+//	{"type": "sc_ack_invalid", "data": {"reason": "<string>"}}
+//
+// Possible reasons: "it is not your turn", "column is full",
+// "column out of range", "game is already over".
+func sendAckInvalid(conn net.Conn, reason string) error {
+	data, err := json.Marshal(map[string]string{"reason": reason})
+	if err != nil {
+		return err
+	}
+	return sendMessage(conn, Message{Type: "sc_ack_invalid", Data: data})
+}
+
+// sendNotifyError sends a sc_notify_error message to the remaining client when
+// an unexpected event terminates the session.
+//
+// Format:
+//
+//	{"type": "sc_notify_error", "data": {"reason": "<string>"}}
+//
+// Possible reasons: "opponent disconnected", "server shutting down".
+func sendNotifyError(conn net.Conn, reason string) error {
+	data, err := json.Marshal(map[string]string{"reason": reason})
+	if err != nil {
+		return err
+	}
+	return sendMessage(conn, Message{Type: "sc_notify_error", Data: data})
+}
+
+// handleSendConnect handles a cs_send_connect message from a client.
+// The client declares which player ("X" or "O") it wants to play as.
+func handleSendConnect(conn net.Conn, data json.RawMessage) {
+	fmt.Println("[handleSendConnect] Processing connection request from client")
+}
+
+// handleSendMove handles a cs_send_move message from a client.
+// The client submits a move by specifying a 1-indexed column number.
+func handleSendMove(conn net.Conn, data json.RawMessage) {
+	fmt.Println("[handleSendMove] Processing move from client")
+}
+
+// handleMessages reads newline-delimited JSON messages from conn and dispatches
+// each to the appropriate handler based on the "type" field.
+func handleMessages(conn net.Conn) {
+	scanner := bufio.NewScanner(conn)
+	for scanner.Scan() {
+		var msg Message
+		if err := json.Unmarshal(scanner.Bytes(), &msg); err != nil {
+			fmt.Fprintln(os.Stderr, "failed to parse message:", err)
+			continue
+		}
+		switch msg.Type {
+		case "cs_send_connect":
+			handleSendConnect(conn, msg.Data)
+		case "cs_send_move":
+			handleSendMove(conn, msg.Data)
+		default:
+			fmt.Fprintln(os.Stderr, "unknown message type:", msg.Type)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		fmt.Fprintln(os.Stderr, "read error:", err)
+	}
+}
 
 func main() {
 	if len(os.Args) < 2 {

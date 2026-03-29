@@ -1,10 +1,129 @@
 package main
 
 import (
+	"bufio"
+	"encoding/json"
 	"fmt"
 	"net"
 	"os"
 )
+
+// Message is the common envelope for all wire protocol messages.
+type Message struct {
+	Type string          `json:"type"`
+	Data json.RawMessage `json:"data"`
+}
+
+// sendMessage encodes msg as JSON and writes it to conn followed by a newline.
+func sendMessage(conn net.Conn, msg Message) error {
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(conn, "%s\n", data)
+	return err
+}
+
+// sendConnect sends a cs_send_connect message to the server, declaring which
+// player this client wants to play as. Must be sent immediately after the TCP
+// connection is established.
+//
+// Format:
+//
+//	{"type": "cs_send_connect", "data": {"player": "<X|O>"}}
+//
+// player must be "X" or "O".
+func sendConnect(conn net.Conn, player string) error {
+	data, err := json.Marshal(map[string]string{"player": player})
+	if err != nil {
+		return err
+	}
+	return sendMessage(conn, Message{Type: "cs_send_connect", Data: data})
+}
+
+// sendMove sends a cs_send_move message to the server to drop a piece into a
+// column. The column is 1-indexed to match the TUI display.
+//
+// Format:
+//
+//	{"type": "cs_send_move", "data": {"player": "<X|O>", "column": <int>}}
+//
+// player must be "X" or "O". column is 1-indexed (1 through board width).
+func sendMove(conn net.Conn, player string, column int) error {
+	data, err := json.Marshal(map[string]interface{}{"player": player, "column": column})
+	if err != nil {
+		return err
+	}
+	return sendMessage(conn, Message{Type: "cs_send_move", Data: data})
+}
+
+// handleAckConnect handles a sc_ack_connect message from the server.
+// Confirms whether the connection was accepted or rejected.
+func handleAckConnect(data json.RawMessage) {
+	fmt.Println("[handleAckConnect] Processing connection acknowledgement from server")
+}
+
+// handleNotifyStart handles a sc_notify_start message from the server.
+// Signals that both players have connected and the game is ready to begin.
+func handleNotifyStart(data json.RawMessage) {
+	fmt.Println("[handleNotifyStart] Processing game start notification from server")
+}
+
+// handleAckMove handles a sc_ack_move message from the server.
+// Contains the updated board state after a valid move was applied.
+func handleAckMove(data json.RawMessage) {
+	fmt.Println("[handleAckMove] Processing move acknowledgement from server")
+}
+
+// handleNotifyWin handles a sc_notify_win message from the server.
+// Signals that a winning move has been made and the game is over.
+func handleNotifyWin(data json.RawMessage) {
+	fmt.Println("[handleNotifyWin] Processing win notification from server")
+}
+
+// handleAckInvalid handles a sc_ack_invalid message from the server.
+// Sent when this client submitted an invalid or out-of-turn move.
+func handleAckInvalid(data json.RawMessage) {
+	fmt.Println("[handleAckInvalid] Processing invalid move response from server")
+}
+
+// handleNotifyError handles a sc_notify_error message from the server.
+// Sent when an unexpected event (e.g. opponent disconnected) terminates the session.
+func handleNotifyError(data json.RawMessage) {
+	fmt.Println("[handleNotifyError] Processing error notification from server")
+}
+
+// handleMessages reads newline-delimited JSON messages from conn and dispatches
+// each to the appropriate handler based on the "type" field.
+func handleMessages(conn net.Conn) {
+	scanner := bufio.NewScanner(conn)
+	for scanner.Scan() {
+		var msg Message
+		if err := json.Unmarshal(scanner.Bytes(), &msg); err != nil {
+			fmt.Fprintln(os.Stderr, "failed to parse message:", err)
+			continue
+		}
+		switch msg.Type {
+		case "sc_ack_connect":
+			handleAckConnect(msg.Data)
+		case "sc_notify_start":
+			handleNotifyStart(msg.Data)
+		case "sc_ack_move":
+			handleAckMove(msg.Data)
+		case "sc_notify_win":
+			handleNotifyWin(msg.Data)
+		case "sc_ack_invalid":
+			handleAckInvalid(msg.Data)
+		case "sc_notify_error":
+			handleNotifyError(msg.Data)
+		default:
+			fmt.Fprintln(os.Stderr, "unknown message type:", msg.Type)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		fmt.Fprintln(os.Stderr, "read error:", err)
+	}
+}
 
 func main() {
 	if len(os.Args) < 2 {
