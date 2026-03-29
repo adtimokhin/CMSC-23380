@@ -304,12 +304,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Receive server messages in the background.
-	go handleMessages(serverConn)
+	// Read subsequent moves from the terminal in the background.
+	// When stdin closes, close the connection so handleMessages returns.
+	go func() {
+		scanner := bufio.NewScanner(os.Stdin)
+		for scanner.Scan() {
+			parseAndSend(serverConn, scanner.Text())
+		}
+		serverConn.Close()
+	}()
 
-	// Read subsequent moves from the terminal.
-	scanner := bufio.NewScanner(os.Stdin)
-	for scanner.Scan() {
-		parseAndSend(serverConn, scanner.Text())
-	}
+	// Block on receiving server messages. Returns when the connection closes.
+	handleMessages(serverConn)
 }
