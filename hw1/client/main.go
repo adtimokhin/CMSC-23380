@@ -6,7 +6,12 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strconv"
+	"strings"
 )
+
+// playerPiece stores which piece ("X" or "O") this client is playing as.
+var playerPiece string
 
 // Message is the common envelope for all wire protocol messages.
 type Message struct {
@@ -55,6 +60,57 @@ func sendMove(conn net.Conn, player string, column int) error {
 		return err
 	}
 	return sendMessage(conn, Message{Type: "cs_send_move", Data: data})
+}
+
+// parseAndSend reads a line of terminal input and dispatches to the appropriate
+// send function. Supported commands:
+//
+//	connect <X|O>   — sends a cs_send_connect message
+//	move <column>   — sends a cs_send_move message using the stored playerPiece
+//	<column>        — shorthand for move <column>
+func parseAndSend(conn net.Conn, line string) {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return
+	}
+
+	parts := strings.Fields(line)
+
+	switch strings.ToLower(parts[0]) {
+	case "connect":
+		if len(parts) < 2 {
+			fmt.Fprintln(os.Stderr, "usage: connect <X|O>")
+			return
+		}
+		if err := sendConnect(conn, parts[1]); err != nil {
+			fmt.Fprintln(os.Stderr, "sendConnect error:", err)
+		}
+
+	case "move":
+		if len(parts) < 2 {
+			fmt.Fprintln(os.Stderr, "usage: move <column>")
+			return
+		}
+		col, err := strconv.Atoi(parts[1])
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "invalid column:", parts[1])
+			return
+		}
+		if err := sendMove(conn, playerPiece, col); err != nil {
+			fmt.Fprintln(os.Stderr, "sendMove error:", err)
+		}
+
+	default:
+		// Bare number is shorthand for a move.
+		col, err := strconv.Atoi(parts[0])
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "unknown command:", parts[0])
+			return
+		}
+		if err := sendMove(conn, playerPiece, col); err != nil {
+			fmt.Fprintln(os.Stderr, "sendMove error:", err)
+		}
+	}
 }
 
 // handleAckConnect handles a sc_ack_connect message from the server.
@@ -126,17 +182,46 @@ func handleMessages(conn net.Conn) {
 }
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: client <host:port>")
+	if len(os.Args) < 4 {
+		fmt.Fprintln(os.Stderr, "usage: client <X|O> <column> <server_addr>")
 		os.Exit(1)
 	}
 
-	conn, err := net.Dial("tcp", os.Args[1])
+	playerPiece = os.Args[1]
+	initialCol, err := strconv.Atoi(os.Args[2])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "invalid column:", os.Args[2])
+		os.Exit(1)
+	}
+	serverAddr := os.Args[3]
+
+	conn, err := net.Dial("tcp", serverAddr)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 	defer conn.Close()
 
-	fmt.Println("Connected to", os.Args[1])
+	fmt.Println("Connected to", serverAddr, "as player", playerPiece)
+
+	// Announce which player this client is.
+	if err := sendConnect(conn, playerPiece); err != nil {
+		fmt.Fprintln(os.Stderr, "sendConnect error:", err)
+		os.Exit(1)
+	}
+
+	// Play the initial move supplied on the command line.
+	if err := sendMove(conn, playerPiece, initialCol); err != nil {
+		fmt.Fprintln(os.Stderr, "sendMove error:", err)
+		os.Exit(1)
+	}
+
+	// Receive server messages in the background.
+	go handleMessages(conn)
+
+	// Read subsequent moves from the terminal.
+	scanner := bufio.NewScanner(os.Stdin)
+	for scanner.Scan() {
+		parseAndSend(conn, scanner.Text())
+	}
 }

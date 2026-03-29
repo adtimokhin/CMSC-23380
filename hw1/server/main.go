@@ -185,6 +185,9 @@ func main() {
 			continue
 		}
 		fmt.Println("User Connected")
-		conn.Close()
+		go func(c net.Conn) {
+			defer c.Close()
+			handleMessages(c)
+		}(conn)
 	}
 }
