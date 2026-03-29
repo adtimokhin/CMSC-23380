@@ -196,7 +196,7 @@ func handleSendConnect(conn net.Conn, data json.RawMessage) {
 	}
 
 	if payload.Player != "X" && payload.Player != "O" {
-		fmt.Printf("[handleSendConnect] invalid piece %q from id %s\n", payload.Player, payload.ID)
+		// fmt.Printf("[handleSendConnect] invalid piece %q from id %s\n", payload.Player, payload.ID)
 		sendAckConnect(conn, false, "", "invalid player, must be X or O")
 		return
 	}
@@ -205,7 +205,7 @@ func handleSendConnect(conn net.Conn, data json.RawMessage) {
 
 	if takenPieces[payload.Player] {
 		gameMu.Unlock()
-		fmt.Printf("[handleSendConnect] piece %s already taken, rejecting id %s\n", payload.Player, payload.ID)
+		// fmt.Printf("[handleSendConnect] piece %s already taken, rejecting id %s\n", payload.Player, payload.ID)
 		sendAckConnect(conn, false, "", "player "+payload.Player+" is already taken")
 		return
 	}
@@ -222,7 +222,7 @@ func handleSendConnect(conn net.Conn, data json.RawMessage) {
 		board = game.NewBoard(boardRows, boardCols, boardM)
 		firstPlayer = payload.Player
 		currentTurn = payload.Player
-		fmt.Printf("[handleSendConnect] game created (%dx%d, M=%d), first player: %s\n", boardRows, boardCols, boardM, firstPlayer)
+		// fmt.Printf("[handleSendConnect] game created (%dx%d, M=%d), first player: %s\n", boardRows, boardCols, boardM, firstPlayer)
 	}
 
 	bothConnected := takenPieces["X"] && takenPieces["O"]
@@ -235,13 +235,13 @@ func handleSendConnect(conn net.Conn, data json.RawMessage) {
 	}
 	gameMu.Unlock()
 
-	fmt.Printf("[handleSendConnect] registered id %s as player %s\n", payload.ID, payload.Player)
+	// fmt.Printf("[handleSendConnect] registered id %s as player %s\n", payload.ID, payload.Player)
 	sendAckConnect(conn, true, payload.Player, "")
 
 	// If both players are now connected, send sc_notify_start to each.
 	// The board already reflects the first player's opening move.
 	if bothConnected {
-		fmt.Println("[handleSendConnect] both players connected, broadcasting start")
+		// fmt.Println("[handleSendConnect] both players connected, broadcasting start")
 		sendNotifyStart(connX, "O", nextTurn, boardStr)
 		sendNotifyStart(connO, "X", nextTurn, boardStr)
 	}
@@ -312,7 +312,7 @@ func handleSendMove(conn net.Conn, data json.RawMessage) {
 		return
 	}
 
-	fmt.Printf("[handleSendMove] player %s played column %d\n", piece, payload.Column)
+	// fmt.Printf("[handleSendMove] player %s played column %d\n", piece, payload.Column)
 
 	boardStr := board.String()
 	allConns := []net.Conn{playerConns["X"], playerConns["O"]}
@@ -408,7 +408,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, err)
 			continue
 		}
-		fmt.Println("User Connected")
+		// fmt.Println("User Connected")
 		go func(c net.Conn) {
 			defer c.Close()
 			handleMessages(c)
