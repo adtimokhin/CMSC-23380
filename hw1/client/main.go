@@ -10,8 +10,12 @@ import (
 	"strings"
 )
 
-// playerPiece stores which piece ("X" or "O") this client is playing as.
+// playerPiece stores which piece ("X" or "O") this client requested.
 var playerPiece string
+
+// clientID is the unique identifier sent to the server, derived from the
+// local TCP address assigned at dial time (e.g. "127.0.0.1:54321").
+var clientID string
 
 // Message is the common envelope for all wire protocol messages.
 type Message struct {
@@ -30,16 +34,19 @@ func sendMessage(conn net.Conn, msg Message) error {
 }
 
 // sendConnect sends a cs_send_connect message to the server, declaring which
-// player this client wants to play as. Must be sent immediately after the TCP
-// connection is established.
+// player piece this client wants and providing a unique client identifier.
+// Must be sent immediately after the TCP connection is established.
 //
 // Format:
 //
-//	{"type": "cs_send_connect", "data": {"player": "<X|O>"}}
+//	{"type": "cs_send_connect", "data": {"player": "<X|O>", "id": "<string>"}}
 //
 // player must be "X" or "O".
-func sendConnect(conn net.Conn, player string) error {
-	data, err := json.Marshal(map[string]string{"player": player})
+// id is a unique string identifying this client (e.g. its local TCP address).
+// The server maps the id to the requested piece; subsequent messages use id
+// instead of player so that the server is the authority on piece assignment.
+func sendConnect(conn net.Conn, player, id string) error {
+	data, err := json.Marshal(map[string]string{"player": player, "id": id})
 	if err != nil {
 		return err
 	}
@@ -47,15 +54,16 @@ func sendConnect(conn net.Conn, player string) error {
 }
 
 // sendMove sends a cs_send_move message to the server to drop a piece into a
-// column. The column is 1-indexed to match the TUI display.
+// column. The client is identified by its id; the server resolves the piece.
 //
 // Format:
 //
-//	{"type": "cs_send_move", "data": {"player": "<X|O>", "column": <int>}}
+//	{"type": "cs_send_move", "data": {"id": "<string>", "column": <int>}}
 //
-// player must be "X" or "O". column is 1-indexed (1 through board width).
-func sendMove(conn net.Conn, player string, column int) error {
-	data, err := json.Marshal(map[string]interface{}{"player": player, "column": column})
+// id must match the id used in cs_send_connect.
+// column is 1-indexed (1 through board width).
+func sendMove(conn net.Conn, id string, column int) error {
+	data, err := json.Marshal(map[string]interface{}{"id": id, "column": column})
 	if err != nil {
 		return err
 	}
@@ -66,7 +74,7 @@ func sendMove(conn net.Conn, player string, column int) error {
 // send function. Supported commands:
 //
 //	connect <X|O>   — sends a cs_send_connect message
-//	move <column>   — sends a cs_send_move message using the stored playerPiece
+//	move <column>   — sends a cs_send_move message using the stored clientID
 //	<column>        — shorthand for move <column>
 func parseAndSend(conn net.Conn, line string) {
 	line = strings.TrimSpace(line)
@@ -82,7 +90,7 @@ func parseAndSend(conn net.Conn, line string) {
 			fmt.Fprintln(os.Stderr, "usage: connect <X|O>")
 			return
 		}
-		if err := sendConnect(conn, parts[1]); err != nil {
+		if err := sendConnect(conn, parts[1], clientID); err != nil {
 			fmt.Fprintln(os.Stderr, "sendConnect error:", err)
 		}
 
@@ -96,7 +104,7 @@ func parseAndSend(conn net.Conn, line string) {
 			fmt.Fprintln(os.Stderr, "invalid column:", parts[1])
 			return
 		}
-		if err := sendMove(conn, playerPiece, col); err != nil {
+		if err := sendMove(conn, clientID, col); err != nil {
 			fmt.Fprintln(os.Stderr, "sendMove error:", err)
 		}
 
@@ -107,14 +115,15 @@ func parseAndSend(conn net.Conn, line string) {
 			fmt.Fprintln(os.Stderr, "unknown command:", parts[0])
 			return
 		}
-		if err := sendMove(conn, playerPiece, col); err != nil {
+		if err := sendMove(conn, clientID, col); err != nil {
 			fmt.Fprintln(os.Stderr, "sendMove error:", err)
 		}
 	}
 }
 
 // handleAckConnect handles a sc_ack_connect message from the server.
-// Confirms whether the connection was accepted or rejected.
+// Confirms whether the connection was accepted or rejected, and if accepted,
+// reports which piece was assigned by the server.
 func handleAckConnect(data json.RawMessage) {
 	fmt.Println("[handleAckConnect] Processing connection acknowledgement from server")
 }
@@ -202,16 +211,18 @@ func main() {
 	}
 	defer conn.Close()
 
-	fmt.Println("Connected to", serverAddr, "as player", playerPiece)
+	// Use the local TCP address as a stable unique identifier for this session.
+	clientID = conn.LocalAddr().String()
+	fmt.Printf("Connected to %s as player %s (id: %s)\n", serverAddr, playerPiece, clientID)
 
-	// Announce which player this client is.
-	if err := sendConnect(conn, playerPiece); err != nil {
+	// Announce desired piece and identity.
+	if err := sendConnect(conn, playerPiece, clientID); err != nil {
 		fmt.Fprintln(os.Stderr, "sendConnect error:", err)
 		os.Exit(1)
 	}
 
 	// Play the initial move supplied on the command line.
-	if err := sendMove(conn, playerPiece, initialCol); err != nil {
+	if err := sendMove(conn, clientID, initialCol); err != nil {
 		fmt.Fprintln(os.Stderr, "sendMove error:", err)
 		os.Exit(1)
 	}

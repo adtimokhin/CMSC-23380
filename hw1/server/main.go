@@ -6,7 +6,17 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"sync"
 )
+
+// playerRegistry maps client id → assigned piece ("X" or "O").
+var playerRegistry = map[string]string{}
+
+// takenPieces tracks which pieces are currently claimed.
+var takenPieces = map[string]bool{}
+
+// registryMu protects playerRegistry and takenPieces from concurrent access.
+var registryMu sync.Mutex
 
 // Message is the common envelope for all wire protocol messages.
 type Message struct {
@@ -29,13 +39,19 @@ func sendMessage(conn net.Conn, msg Message) error {
 //
 // Format:
 //
-//	{"type": "sc_ack_connect", "data": {"success": <bool>, "reason": "<string>"}}
+//	{"type": "sc_ack_connect", "data": {"success": <bool>, "player": "<X|O|>", "reason": "<string>"}}
 //
-// On success, reason must be an empty string.
-// On failure, reason is one of: "game is full", "player X is already taken",
-// "invalid player, must be X or O".
-func sendAckConnect(conn net.Conn, success bool, reason string) error {
-	data, err := json.Marshal(map[string]interface{}{"success": success, "reason": reason})
+// On success, player is the piece assigned to this client; reason is empty.
+// On failure, player is empty; reason is one of:
+//   - "player X is already taken"
+//   - "player O is already taken"
+//   - "invalid player, must be X or O"
+func sendAckConnect(conn net.Conn, success bool, player, reason string) error {
+	data, err := json.Marshal(map[string]interface{}{
+		"success": success,
+		"player":  player,
+		"reason":  reason,
+	})
 	if err != nil {
 		return err
 	}
@@ -128,15 +144,64 @@ func sendNotifyError(conn net.Conn, reason string) error {
 }
 
 // handleSendConnect handles a cs_send_connect message from a client.
-// The client declares which player ("X" or "O") it wants to play as.
+// Parses the requested piece and client id, checks whether the piece is
+// available, and registers the id → piece mapping on success.
 func handleSendConnect(conn net.Conn, data json.RawMessage) {
-	fmt.Println("[handleSendConnect] Processing connection request from client")
+	var payload struct {
+		Player string `json:"player"`
+		ID     string `json:"id"`
+	}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		fmt.Fprintln(os.Stderr, "[handleSendConnect] failed to parse payload:", err)
+		sendAckConnect(conn, false, "", "malformed connect message")
+		return
+	}
+
+	if payload.Player != "X" && payload.Player != "O" {
+		fmt.Printf("[handleSendConnect] invalid piece %q from id %s\n", payload.Player, payload.ID)
+		sendAckConnect(conn, false, "", "invalid player, must be X or O")
+		return
+	}
+
+	registryMu.Lock()
+	defer registryMu.Unlock()
+
+	if takenPieces[payload.Player] {
+		fmt.Printf("[handleSendConnect] piece %s already taken, rejecting id %s\n", payload.Player, payload.ID)
+		sendAckConnect(conn, false, "", "player "+payload.Player+" is already taken")
+		return
+	}
+
+	playerRegistry[payload.ID] = payload.Player
+	takenPieces[payload.Player] = true
+	fmt.Printf("[handleSendConnect] registered id %s as player %s\n", payload.ID, payload.Player)
+	sendAckConnect(conn, true, payload.Player, "")
 }
 
 // handleSendMove handles a cs_send_move message from a client.
-// The client submits a move by specifying a 1-indexed column number.
+// Parses the client id and column, looks up the player piece from the registry,
+// and processes the move.
 func handleSendMove(conn net.Conn, data json.RawMessage) {
-	fmt.Println("[handleSendMove] Processing move from client")
+	var payload struct {
+		ID     string `json:"id"`
+		Column int    `json:"column"`
+	}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		fmt.Fprintln(os.Stderr, "[handleSendMove] failed to parse payload:", err)
+		return
+	}
+
+	registryMu.Lock()
+	piece, ok := playerRegistry[payload.ID]
+	registryMu.Unlock()
+
+	if !ok {
+		fmt.Printf("[handleSendMove] unknown client id %s\n", payload.ID)
+		sendAckInvalid(conn, "client not registered")
+		return
+	}
+
+	fmt.Printf("[handleSendMove] player %s (id %s) wants column %d\n", piece, payload.ID, payload.Column)
 }
 
 // handleMessages reads newline-delimited JSON messages from conn and dispatches
