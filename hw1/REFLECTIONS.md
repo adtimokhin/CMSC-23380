@@ -7,7 +7,7 @@ What are the advantages and disadvantages of your chosen protocol compared to ot
 
 **Protocol: newline-delimited JSON over TCP.**
 
-Every message — in both directions — is a single JSON object followed by a `\n` byte. All messages share a two-field envelope:
+Every message — in both directions — is a single JSON object followed by a `\n` byte. All messages share a two-field format:
 
 ```json
 {"type": "<message_type>", "data": { ... }}
@@ -17,28 +17,30 @@ The `type` field encodes direction and intent using the convention `<cs|sc>_<ver
 
 **Client → Server**
 
-| Type | Fields in `data` | Notes |
-|---|---|---|
-| `cs_send_connect` | `player` (string `"X"` or `"O"`), `id` (string) | `id` is the client's local TCP address, used as a stable unique identifier for the session so the server can map subsequent moves to the right piece without the client re-sending its piece on every message. |
-| `cs_send_move` | `id` (string), `column` (int, 1-indexed) | Uses `id` rather than `player`; the server resolves the piece from its registry. |
+`cs_send_connect` carries `player` (string `"X"` or `"O"`) and `id` (string). `id` is the client's local TCP address, used as a stable unique identifier for the session so the server can map subsequent moves to the right piece without the client re-sending its piece on every message.
+
+`cs_send_move` carries `id` (string) and `column` (int, 1-indexed). It uses `id` rather than `player`; the server resolves the piece from its registry.
 
 **Server → Client**
 
-| Type | Fields in `data` | Notes |
-|---|---|---|
-| `sc_ack_connect` | `success` (bool), `player` (string `"X"`, `"O"`, or `""`), `reason` (string) | On success, `player` echoes the assigned piece; `reason` is empty. On failure, `player` is empty and `reason` is one of `"player X is already taken"`, `"player O is already taken"`, `"invalid player, must be X or O"`. |
-| `sc_notify_start` | `opponent` (string), `first_turn` (string), `board` (string) | Broadcast to both clients when the second player connects. `first_turn` is the piece whose turn it is **next** — i.e., the second player's piece, because the first player has already made their opening move before the second player connected. `board` is the current board state after that opening move. |
-| `sc_ack_move` | `status` (string `"OK"` or `"DRAW"`), `next` (string `"X"`, `"O"`, or `""`), `board` (string) | Broadcast to both clients after every valid move. `next` is empty when the game is over. `board` is the full board rendered by `game.Board.String()`. |
-| `sc_notify_win` | `winner` (string `"X"` or `"O"`), `board` (string) | Broadcast to both clients when a winning move is detected. |
-| `sc_ack_invalid` | `reason` (string) | Sent only to the client that submitted a bad move. Possible reasons: `"it is not your turn"`, `"column is full"`, `"column out of range"`, `"game is already over"`. Game state is unchanged. |
-| `sc_notify_error` | `reason` (string) | Sent to the surviving client when a session-terminating event occurs. Possible reasons: `"opponent disconnected"`, `"server shutting down"`. |
+`sc_ack_connect` carries `success` (bool), `player` (string `"X"`, `"O"`, or `""`), and `reason` (string). On success, `player` echoes the assigned piece and `reason` is empty. On failure, `player` is empty and `reason` is one of `"player X is already taken"`, `"player O is already taken"`, `"invalid player, must be X or O"`.
+
+`sc_notify_start` carries `opponent` (string), `first_turn` (string), and `board` (string). Broadcast to both clients when the second player connects. `first_turn` is the piece whose turn it is **next** — i.e., the second player's piece, because the first player has already made their opening move before the second player connected. `board` is the current board state after that opening move.
+
+`sc_ack_move` carries `status` (string `"OK"` or `"DRAW"`), `next` (string `"X"`, `"O"`, or `""`), and `board` (string). Broadcast to both clients after every valid move. `next` is empty when the game is over. `board` is the full board rendered by `game.Board.String()`.
+
+`sc_notify_win` carries `winner` (string `"X"` or `"O"`) and `board` (string). Broadcast to both clients when a winning move is detected.
+
+`sc_ack_invalid` carries `reason` (string). Sent only to the client that submitted a bad move. Possible reasons: `"it is not your turn"`, `"column is full"`, `"column out of range"`, `"game is already over"`. Game state is unchanged.
+
+`sc_notify_error` carries `reason` (string). Sent to the surviving client when a session-terminating event occurs. Possible reasons: `"opponent disconnected"`, `"server shutting down"`.
 
 **Why JSON?**
 
-JSON is self-describing and human-readable, which made iterative development and debugging straightforward — `nc` or any terminal can read raw messages. Adding a field (e.g., `board` to `sc_notify_start`, or `id` to `cs_send_connect`) required no changes to the framing layer; both sides just ignore unknown fields. Go's `encoding/json` package handles marshalling and unmarshalling with minimal boilerplate.
+JSON is human-readable, which made iterative development and debugging straightforward. Adding a field (e.g., `board` to `sc_notify_start`, or `id` to `cs_send_connect`) required no changes to the framing layer; both sides just ignore unknown fields. Go's `encoding/json` package handles marshalling and unmarshalling with minimal boilerplate.
 
 **Advantages over alternatives:**
-- *vs. a binary protocol (e.g. raw bytes):* far easier to inspect with basic tools; no need for a schema compiler or custom parser.
+- *vs. a binary protocol (e.g. raw bytes):* far easier to inspect with basic tools.
 - *vs. a custom text protocol:* the envelope/type/data structure means all message parsing is uniform — a single `json.Unmarshal` into the `Message` struct dispatches to the right handler, with no per-message parsing logic at the framing level.
 
 **Disadvantages:**

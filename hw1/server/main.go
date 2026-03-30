@@ -12,6 +12,10 @@ import (
 	"connectm/game"
 )
 
+////////////////////////////////////////////////////////////////////////////////
+//                               Global State
+////////////////////////////////////////////////////////////////////////////////
+
 // gameMu protects all shared game state below.
 var gameMu sync.Mutex
 
@@ -41,6 +45,10 @@ var gameOver = false
 // boardRows, boardCols, boardM are parsed from command-line arguments.
 var boardRows, boardCols, boardM int
 
+////////////////////////////////////////////////////////////////////////////////
+//                              Wire Protocol
+////////////////////////////////////////////////////////////////////////////////
+
 // Message is the common envelope for all wire protocol messages.
 type Message struct {
 	Type string          `json:"type"`
@@ -57,6 +65,10 @@ func sendMessage(conn net.Conn, msg Message) error {
 	return err
 }
 
+////////////////////////////////////////////////////////////////////////////////
+//                               Broadcast
+////////////////////////////////////////////////////////////////////////////////
+
 // broadcast sends msg to the provided connections. Errors are printed but do
 // not abort delivery to the other connection. The caller must collect the
 // target connections before calling broadcast (do not hold gameMu when calling,
@@ -70,6 +82,10 @@ func broadcast(msg Message, conns []net.Conn) {
 		}
 	}
 }
+
+////////////////////////////////////////////////////////////////////////////////
+//                            Outbound Messages
+////////////////////////////////////////////////////////////////////////////////
 
 // sendAckConnect sends a sc_ack_connect message to a client, confirming whether
 // the connection was accepted or rejected.
@@ -180,6 +196,10 @@ func sendNotifyError(conn net.Conn, reason string) error {
 	}
 	return sendMessage(conn, Message{Type: "sc_notify_error", Data: data})
 }
+
+////////////////////////////////////////////////////////////////////////////////
+//                        Inbound Message Handlers
+////////////////////////////////////////////////////////////////////////////////
 
 // handleSendConnect handles a cs_send_connect message from a client.
 // On the first connection the game board is created. On the second connection
@@ -320,7 +340,11 @@ func handleSendMove(conn net.Conn, data json.RawMessage) {
 	if board.CheckWin() {
 		gameOver = true
 		gameMu.Unlock()
-		winData, _ := json.Marshal(map[string]string{"winner": piece, "board": boardStr})
+		winData, err := json.Marshal(map[string]string{"winner": piece, "board": boardStr})
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "[handleSendMove] failed to marshal win data:", err)
+			return
+		}
 		broadcast(Message{Type: "sc_notify_win", Data: winData}, allConns)
 		return
 	}
@@ -328,7 +352,11 @@ func handleSendMove(conn net.Conn, data json.RawMessage) {
 	if board.IsFull() {
 		gameOver = true
 		gameMu.Unlock()
-		ackData, _ := json.Marshal(map[string]string{"status": "DRAW", "next": "", "board": boardStr})
+		ackData, err := json.Marshal(map[string]string{"status": "DRAW", "next": "", "board": boardStr})
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "[handleSendMove] failed to marshal draw data:", err)
+			return
+		}
 		broadcast(Message{Type: "sc_ack_move", Data: ackData}, allConns)
 		return
 	}
@@ -342,7 +370,11 @@ func handleSendMove(conn net.Conn, data json.RawMessage) {
 	next := currentTurn
 	gameMu.Unlock()
 
-	ackData, _ := json.Marshal(map[string]string{"status": "OK", "next": next, "board": boardStr})
+	ackData, err := json.Marshal(map[string]string{"status": "OK", "next": next, "board": boardStr})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "[handleSendMove] failed to marshal ack data:", err)
+		return
+	}
 	broadcast(Message{Type: "sc_ack_move", Data: ackData}, allConns)
 }
 
@@ -369,6 +401,10 @@ func handleMessages(conn net.Conn) {
 		fmt.Fprintln(os.Stderr, "read error:", err)
 	}
 }
+
+////////////////////////////////////////////////////////////////////////////////
+//                              Entry Point
+////////////////////////////////////////////////////////////////////////////////
 
 func main() {
 	if len(os.Args) < 5 {

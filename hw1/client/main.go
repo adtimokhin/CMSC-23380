@@ -11,6 +11,10 @@ import (
 	"sync"
 )
 
+////////////////////////////////////////////////////////////////////////////////
+//                               Global State
+////////////////////////////////////////////////////////////////////////////////
+
 // playerPiece stores which piece ("X" or "O") this client requested.
 var playerPiece string
 
@@ -35,6 +39,10 @@ func signalFirstMoveAcked() {
 	firstMoveAckedOnce.Do(func() { close(firstMoveAcked) })
 }
 
+////////////////////////////////////////////////////////////////////////////////
+//                              Wire Protocol
+////////////////////////////////////////////////////////////////////////////////
+
 // Message is the common envelope for all wire protocol messages.
 type Message struct {
 	Type string          `json:"type"`
@@ -50,6 +58,10 @@ func sendMessage(conn net.Conn, msg Message) error {
 	_, err = fmt.Fprintf(conn, "%s\n", data)
 	return err
 }
+
+////////////////////////////////////////////////////////////////////////////////
+//                            Outbound Messages
+////////////////////////////////////////////////////////////////////////////////
 
 // sendConnect sends a cs_send_connect message to the server, declaring which
 // player piece this client wants and providing a unique client identifier.
@@ -87,6 +99,10 @@ func sendMove(conn net.Conn, id string, column int) error {
 	}
 	return sendMessage(conn, Message{Type: "cs_send_move", Data: data})
 }
+
+////////////////////////////////////////////////////////////////////////////////
+//                             Input Parsing
+////////////////////////////////////////////////////////////////////////////////
 
 // parseAndSend reads a line of terminal input and dispatches to the appropriate
 // send function. Supported commands:
@@ -138,6 +154,10 @@ func parseAndSend(conn net.Conn, line string) {
 		}
 	}
 }
+
+////////////////////////////////////////////////////////////////////////////////
+//                        Inbound Message Handlers
+////////////////////////////////////////////////////////////////////////////////
 
 // handleAckConnect handles a sc_ack_connect message from the server.
 // On success, immediately sends the initial move so the server can process it
@@ -281,6 +301,10 @@ func handleMessages(conn net.Conn) {
 		fmt.Fprintln(os.Stderr, "read error:", err)
 	}
 }
+
+////////////////////////////////////////////////////////////////////////////////
+//                              Entry Point
+////////////////////////////////////////////////////////////////////////////////
 
 func main() {
 	if len(os.Args) < 4 {
