@@ -412,6 +412,23 @@ func main() {
 		go func(c net.Conn) {
 			defer c.Close()
 			handleMessages(c)
+
+			// Release the player slot when this connection closes so the same
+			// piece can reconnect for the next move.
+			gameMu.Lock()
+			for piece, conn := range playerConns {
+				if conn == c {
+					delete(playerConns, piece)
+					takenPieces[piece] = false
+					for id, p := range playerRegistry {
+						if p == piece {
+							delete(playerRegistry, id)
+						}
+					}
+					break
+				}
+			}
+			gameMu.Unlock()
 		}(conn)
 	}
 }
