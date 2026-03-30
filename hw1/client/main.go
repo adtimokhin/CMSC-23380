@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // playerPiece stores which piece ("X" or "O") this client requested.
@@ -24,6 +25,15 @@ var initialCol int
 // serverConn is the active connection to the server, stored so that
 // handlers can send messages without passing conn through the dispatcher chain.
 var serverConn net.Conn
+
+// firstMoveAcked is closed once the server has responded to the initial move,
+// so the stdin goroutine does not close the connection before that response arrives.
+var firstMoveAcked = make(chan struct{})
+var firstMoveAckedOnce sync.Once
+
+func signalFirstMoveAcked() {
+	firstMoveAckedOnce.Do(func() { close(firstMoveAcked) })
+}
 
 // Message is the common envelope for all wire protocol messages.
 type Message struct {
@@ -177,11 +187,13 @@ func handleAckMove(data json.RawMessage) {
 		fmt.Fprintln(os.Stderr, "failed to parse sc_ack_move:", err)
 		return
 	}
+	signalFirstMoveAcked()
 	switch payload.Status {
 	case "OK":
 		fmt.Printf("OK NEXT %s\n%s", payload.Next, payload.Board)
 	case "DRAW":
 		fmt.Printf("OK DRAW\n%s", payload.Board)
+		os.Exit(0)
 	}
 }
 
@@ -201,7 +213,9 @@ func handleNotifyWin(data json.RawMessage) {
 		fmt.Fprintln(os.Stderr, "failed to parse sc_notify_win:", err)
 		return
 	}
+	signalFirstMoveAcked()
 	fmt.Printf("OK WIN %s\n%s", payload.Winner, payload.Board)
+	os.Exit(0)
 }
 
 // handleAckInvalid handles a sc_ack_invalid message from the server.
@@ -214,6 +228,7 @@ func handleAckInvalid(data json.RawMessage) {
 		fmt.Fprintln(os.Stderr, "failed to parse sc_ack_invalid:", err)
 		return
 	}
+	signalFirstMoveAcked()
 	if payload.Reason == "game is already over" {
 		fmt.Println("ERROR game is already over, restart the server to play again")
 		os.Exit(1)
@@ -311,6 +326,9 @@ func main() {
 		for scanner.Scan() {
 			parseAndSend(serverConn, scanner.Text())
 		}
+		// Wait until the server has responded to the initial move before closing,
+		// so we don't race and drop the response when stdin has no input.
+		<-firstMoveAcked
 		serverConn.Close()
 	}()
 

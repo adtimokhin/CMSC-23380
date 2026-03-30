@@ -281,7 +281,7 @@ func handleSendMove(conn net.Conn, data json.RawMessage) {
 	piece, ok := playerRegistry[payload.ID]
 	if !ok {
 		gameMu.Unlock()
-		fmt.Printf("[handleSendMove] unknown client id %s\n", payload.ID)
+		fmt.Fprintf(os.Stderr, "[handleSendMove] unknown client id %s\n", payload.ID)
 		sendAckInvalid(conn, "client not registered")
 		return
 	}
