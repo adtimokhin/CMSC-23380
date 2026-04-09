@@ -257,6 +257,14 @@ func TestStage2_PutFailsIfBackupsUnreachable(t *testing.T) {
 	tc := newTestCluster(t)
 	ctx := testCtx(t)
 
+	// Prerequisite: Put must succeed with live backups. This rules out empty
+	// stubs that return an error unconditionally (which would trivially satisfy
+	// the unreachability check below).
+	preresp, preerr := tc.Nodes[0].KVClient.Put(ctx, &pb.PutRequest{Key: "prereq", Value: "v"})
+	if preerr != nil || !preresp.Ok {
+		t.Fatal("Put failed with live backups — implement Stage 2 replication before this test is meaningful")
+	}
+
 	// Kill both backups before the Put.
 	tc.KillNode(1)
 	tc.KillNode(2)
