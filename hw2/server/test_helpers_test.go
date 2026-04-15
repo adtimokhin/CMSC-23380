@@ -20,11 +20,12 @@ import (
 	"testing"
 	"time"
 
+	"kvstore/config"
+	pb "kvstore/proto"
+
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
-	"kvstore/config"
-	pb "kvstore/proto"
 )
 
 const bufSize = 1 << 20 // 1 MB in-memory buffer
@@ -77,7 +78,7 @@ func newTestNode(t *testing.T, id int32, cfg *config.ClusterConfig) *TestNode {
 	replSrv := grpc.NewServer()
 	pb.RegisterReplicationServer(replSrv, n)
 
-	go kvSrv.Serve(kvLis)   //nolint:errcheck
+	go kvSrv.Serve(kvLis)     //nolint:errcheck
 	go replSrv.Serve(replLis) //nolint:errcheck
 
 	dialBufconn := func(lis *bufconn.Listener) *grpc.ClientConn {
@@ -152,6 +153,8 @@ func newTestCluster(t *testing.T) *TestCluster {
 func (tc *TestCluster) KillNode(id int32) {
 	tn := tc.Nodes[id]
 	tn.node.cancel()
+	tn.kvSrv.Stop()
+	tn.replSrv.Stop()
 	tn.kvLis.Close()
 	tn.replLis.Close()
 }
