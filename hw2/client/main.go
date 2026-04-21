@@ -65,7 +65,21 @@ func cmdPut(key, value, addr string) {
 	if err != nil {
 		log.Fatalf("put: %v", err)
 	}
-	// TODO (Stage 5): handle redirect_addr
+	if !resp.Ok && resp.RedirectAddr != "" {
+		conn2, err2 := dial(resp.RedirectAddr)
+		if err2 != nil {
+			fmt.Fprintln(os.Stderr, "ERROR: could not reach primary after redirect")
+			os.Exit(1)
+		}
+		defer conn2.Close()
+		ctx2, cancel2 := context.WithTimeout(context.Background(), defaultTimeout)
+		defer cancel2()
+		resp, err = pb.NewKVStoreClient(conn2).Put(ctx2, &pb.PutRequest{Key: key, Value: value})
+		if err != nil || !resp.Ok {
+			fmt.Fprintln(os.Stderr, "ERROR: could not reach primary after redirect")
+			os.Exit(1)
+		}
+	}
 	fmt.Printf("ok=%v lamport_ts=%d\n", resp.Ok, resp.LamportTs)
 }
 
