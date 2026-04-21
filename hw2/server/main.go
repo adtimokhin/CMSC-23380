@@ -126,6 +126,18 @@ func newNode(id int32, cfg *config.ClusterConfig) *Node {
 //
 // Stage 4: Return redirect_addr when this node is not the primary.
 func (n *Node) Put(_ context.Context, req *pb.PutRequest) (*pb.PutResponse, error) {
+	n.mu.Lock()
+	role := n.role
+	primaryID := n.currentPrimaryID
+	n.mu.Unlock()
+	if role != RolePrimary {
+		primary, err := n.cfg.Self(primaryID)
+		if err != nil {
+			return &pb.PutResponse{Ok: false}, nil
+		}
+		return &pb.PutResponse{Ok: false, RedirectAddr: primary.ClientAddr}, nil
+	}
+
 	ts := n.clk.Tick()
 
 	var (
@@ -180,11 +192,14 @@ func (n *Node) Get(_ context.Context, req *pb.GetRequest) (*pb.GetResponse, erro
 // Stage 1: Return this node's own address (assume single-node).
 // Stage 4: Return currentPrimaryID and its client address.
 func (n *Node) GetPrimary(_ context.Context, _ *pb.Empty) (*pb.GetPrimaryResponse, error) {
-	self, err := n.cfg.Self(n.id)
+	n.mu.Lock()
+	primaryID := n.currentPrimaryID
+	n.mu.Unlock()
+	primary, err := n.cfg.Self(primaryID)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "config: %v", err)
 	}
-	return &pb.GetPrimaryResponse{PrimaryAddr: self.ClientAddr, PrimaryId: n.id}, nil
+	return &pb.GetPrimaryResponse{PrimaryAddr: primary.ClientAddr, PrimaryId: primaryID}, nil
 }
 
 // ── Replication service (internal, peer-to-peer) ─────────────────────────
@@ -232,7 +247,20 @@ func (n *Node) Heartbeat(_ context.Context, req *pb.HeartbeatRequest) (*pb.Heart
 // because heartbeat exchanges synchronize clocks. Node ID is the tiebreaker:
 // higher ID wins.
 func (n *Node) AnnounceLeader(_ context.Context, req *pb.AnnounceLeaderRequest) (*pb.AnnounceLeaderResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "TODO: implement AnnounceLeader (Stage 4)")
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	var localTs int64
+	if n.role == RoleCandidate {
+		localTs = n.electionTs
+	} else {
+		localTs = n.clk.Now()
+	}
+	accept := req.ElectionLamport > localTs ||
+		(req.ElectionLamport == localTs && req.NewPrimaryId > n.id)
+	if accept {
+		n.currentPrimaryID = req.NewPrimaryId
+	}
+	return &pb.AnnounceLeaderResponse{Accepted: accept}, nil
 }
 
 // ── Background goroutines ─────────────────────────────────────────────────
@@ -306,7 +334,13 @@ func (n *Node) monitorPeers() {
 // Stage 4: implement this.
 func (n *Node) onPeerDead(peerID int32) {
 	log.Printf("[node %d] suspect: peer %d unresponsive", n.id, peerID)
-	// TODO (Stage 4): if peerID == currentPrimaryID && n.role == RoleBackup { go n.runElection() }
+	n.mu.Lock()
+	isPrimary := peerID == n.currentPrimaryID
+	isBackup := n.role == RoleBackup
+	n.mu.Unlock()
+	if isPrimary && isBackup {
+		go n.runElection()
+	}
 }
 
 // runElection implements the simplified Lamport-bully election:
@@ -325,7 +359,54 @@ func (n *Node) onPeerDead(peerID int32) {
 //
 // Stage 4: implement this.
 func (n *Node) runElection() {
-	// TODO (Stage 4)
+	n.mu.Lock()
+	if n.role != RoleBackup {
+		n.mu.Unlock()
+		return
+	}
+	n.role = RoleCandidate
+	n.electionTs = n.clk.Tick()
+	electionTs := n.electionTs
+	deadPrimaryID := n.currentPrimaryID
+	n.mu.Unlock()
+
+	accepted := false
+	for id, conn := range n.peerConns {
+		if id == deadPrimaryID {
+			continue
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), ReplicateTimeout)
+		resp, err := pb.NewReplicationClient(conn).AnnounceLeader(ctx, &pb.AnnounceLeaderRequest{
+			NewPrimaryId:    n.id,
+			ElectionLamport: electionTs,
+		})
+		cancel()
+		if err == nil {
+			accepted = resp.Accepted
+		}
+		break
+	}
+
+	if accepted {
+		n.mu.Lock()
+		n.role = RolePrimary
+		n.currentPrimaryID = n.id
+		n.mu.Unlock()
+		log.Printf("[node %d] won election, becoming PRIMARY", n.id)
+		for _, conn := range n.peerConns {
+			ctx, cancel := context.WithTimeout(context.Background(), ReplicateTimeout)
+			pb.NewReplicationClient(conn).AnnounceLeader(ctx, &pb.AnnounceLeaderRequest{ //nolint:errcheck
+				NewPrimaryId:    n.id,
+				ElectionLamport: electionTs,
+			})
+			cancel()
+		}
+	} else {
+		n.mu.Lock()
+		n.role = RoleBackup
+		n.mu.Unlock()
+		log.Printf("[node %d] lost election, staying BACKUP", n.id)
+	}
 }
 
 // ── main ──────────────────────────────────────────────────────────────────
