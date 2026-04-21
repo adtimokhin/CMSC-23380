@@ -31,6 +31,7 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 )
 
@@ -126,6 +127,39 @@ func newNode(id int32, cfg *config.ClusterConfig) *Node {
 // Stage 4: Return redirect_addr when this node is not the primary.
 func (n *Node) Put(_ context.Context, req *pb.PutRequest) (*pb.PutResponse, error) {
 	ts := n.clk.Tick()
+
+	var (
+		errMu    sync.Mutex
+		firstErr error
+		wg       sync.WaitGroup
+	)
+	for _, conn := range n.peerConns {
+		wg.Add(1)
+		go func(c *grpc.ClientConn) {
+			defer wg.Done()
+			ctx, cancel := context.WithTimeout(context.Background(), ReplicateTimeout)
+			defer cancel()
+			_, err := pb.NewReplicationClient(c).Replicate(ctx, &pb.ReplicateRequest{
+				Key:       req.Key,
+				Value:     req.Value,
+				LamportTs: ts,
+				OriginId:  n.id,
+			})
+			if err != nil {
+				errMu.Lock()
+				if firstErr == nil {
+					firstErr = err
+				}
+				errMu.Unlock()
+			}
+		}(conn)
+	}
+	wg.Wait()
+
+	if firstErr != nil {
+		return nil, status.Errorf(codes.Unavailable, "replication failed: %v", firstErr)
+	}
+
 	n.store.Put(req.Key, req.Value, ts)
 	return &pb.PutResponse{Ok: true, LamportTs: ts}, nil
 }
@@ -162,7 +196,9 @@ func (n *Node) GetPrimary(_ context.Context, _ *pb.Empty) (*pb.GetPrimaryRespons
 //   - Write to the local store.
 //   - Return ReplicateResponse{ok: true, lamport_ts: updated_clock}.
 func (n *Node) Replicate(_ context.Context, req *pb.ReplicateRequest) (*pb.ReplicateResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "TODO: implement Replicate (Stage 2)")
+	updatedTs := n.clk.Update(req.LamportTs)
+	n.store.Put(req.Key, req.Value, req.LamportTs)
+	return &pb.ReplicateResponse{Ok: true, LamportTs: updatedTs}, nil
 }
 
 // Heartbeat responds to a heartbeat from a peer.
@@ -183,8 +219,8 @@ func (n *Node) Heartbeat(_ context.Context, req *pb.HeartbeatRequest) (*pb.Heart
 //     Otherwise use n.clk.Now(). This prevents a concurrent heartbeat from
 //     advancing the clock and producing a wrong comparison result.
 //   - Accept (return accepted=true, set currentPrimaryID = req.NewPrimaryId) if:
-//       req.ElectionLamport > localTs
-//       OR (req.ElectionLamport == localTs AND req.NewPrimaryId > n.id)
+//     req.ElectionLamport > localTs
+//     OR (req.ElectionLamport == localTs AND req.NewPrimaryId > n.id)
 //   - Otherwise reject (return accepted=false). The caller wins or yields on its own.
 //
 // Note: two backups frequently start elections simultaneously with equal clocks
@@ -267,9 +303,15 @@ func main() {
 
 	node := newNode(self.ID, cfg)
 
-	// TODO (Stage 2): dial peer Replication servers and populate node.peerConns.
-	// Use cfg.Peers(self.ID) to get the list of peer NodeConfigs, then call
-	// grpc.NewClient(peer.PeerAddr, ...) for each and store in node.peerConns.
+	node.peerConns = make(map[int32]*grpc.ClientConn)
+	for _, peer := range cfg.Peers(self.ID) {
+		conn, err := grpc.NewClient(peer.PeerAddr,
+			grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if err != nil {
+			log.Fatalf("dial peer %d at %s: %v", peer.ID, peer.PeerAddr, err)
+		}
+		node.peerConns[peer.ID] = conn
+	}
 
 	// TODO (Stage 3): create a context for background goroutines:
 	//   ctx, cancel := context.WithCancel(context.Background())
