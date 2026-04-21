@@ -125,14 +125,20 @@ func newNode(id int32, cfg *config.ClusterConfig) *Node {
 //
 // Stage 4: Return redirect_addr when this node is not the primary.
 func (n *Node) Put(_ context.Context, req *pb.PutRequest) (*pb.PutResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "TODO: implement Put (Stage 1)")
+	ts := n.clk.Tick()
+	n.store.Put(req.Key, req.Value, ts)
+	return &pb.PutResponse{Ok: true, LamportTs: ts}, nil
 }
 
 // Get handles a read from a client.
 //
 // Stage 1: Return the value from the local store (reads may be stale on backups).
 func (n *Node) Get(_ context.Context, req *pb.GetRequest) (*pb.GetResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "TODO: implement Get (Stage 1)")
+	entry, ok := n.store.Get(req.Key)
+	if !ok {
+		return &pb.GetResponse{Found: false}, nil
+	}
+	return &pb.GetResponse{Found: true, Value: entry.Value, LamportTs: entry.Ts}, nil
 }
 
 // GetPrimary returns the client-facing address and ID of the current primary.
@@ -140,7 +146,11 @@ func (n *Node) Get(_ context.Context, req *pb.GetRequest) (*pb.GetResponse, erro
 // Stage 1: Return this node's own address (assume single-node).
 // Stage 4: Return currentPrimaryID and its client address.
 func (n *Node) GetPrimary(_ context.Context, _ *pb.Empty) (*pb.GetPrimaryResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "TODO: implement GetPrimary (Stage 1)")
+	self, err := n.cfg.Self(n.id)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "config: %v", err)
+	}
+	return &pb.GetPrimaryResponse{PrimaryAddr: self.ClientAddr, PrimaryId: n.id}, nil
 }
 
 // ── Replication service (internal, peer-to-peer) ─────────────────────────
