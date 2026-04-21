@@ -208,7 +208,12 @@ func (n *Node) Replicate(_ context.Context, req *pb.ReplicateRequest) (*pb.Repli
 //   - Apply Lamport max-rule on req.LamportTs.
 //   - Return own {id, lamport_ts, role}.
 func (n *Node) Heartbeat(_ context.Context, req *pb.HeartbeatRequest) (*pb.HeartbeatResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "TODO: implement Heartbeat (Stage 3)")
+	n.mu.Lock()
+	n.lastSeen[req.SenderId] = time.Now()
+	role := n.role
+	n.mu.Unlock()
+	updatedTs := n.clk.Update(req.LamportTs)
+	return &pb.HeartbeatResponse{SenderId: n.id, LamportTs: updatedTs, Role: int32(role)}, nil
 }
 
 // AnnounceLeader handles a leader announcement from a candidate backup.
@@ -238,7 +243,30 @@ func (n *Node) AnnounceLeader(_ context.Context, req *pb.AnnounceLeaderRequest) 
 //
 // Stage 3: implement this.
 func (n *Node) startHeartbeatLoop() {
-	// TODO (Stage 3)
+	ticker := time.NewTicker(HeartbeatInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-n.ctx.Done():
+			return
+		case <-ticker.C:
+			for peerID, conn := range n.peerConns {
+				go func(id int32, c *grpc.ClientConn) {
+					ctx, cancel := context.WithTimeout(n.ctx, HeartbeatInterval*4/5)
+					defer cancel()
+					ts := n.clk.Tick()
+					n.mu.Lock()
+					role := int32(n.role)
+					n.mu.Unlock()
+					pb.NewReplicationClient(c).Heartbeat(ctx, &pb.HeartbeatRequest{ //nolint:errcheck
+						SenderId:  n.id,
+						LamportTs: ts,
+						Role:      role,
+					})
+				}(peerID, conn)
+			}
+		}
+	}
 }
 
 // monitorPeers runs in a goroutine, checking lastSeen for each peer.
@@ -247,7 +275,29 @@ func (n *Node) startHeartbeatLoop() {
 // Stage 3: implement detection logic.
 // Stage 4: implement election trigger in onPeerDead.
 func (n *Node) monitorPeers() {
-	// TODO (Stage 3)
+	ticker := time.NewTicker(HeartbeatInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-n.ctx.Done():
+			return
+		case <-ticker.C:
+			n.mu.Lock()
+			peers := make([]int32, 0, len(n.peerConns))
+			for id := range n.peerConns {
+				peers = append(peers, id)
+			}
+			n.mu.Unlock()
+			for _, peerID := range peers {
+				n.mu.Lock()
+				ts, ok := n.lastSeen[peerID]
+				n.mu.Unlock()
+				if ok && time.Since(ts) > HeartbeatTimeout {
+					n.onPeerDeadFunc(peerID)
+				}
+			}
+		}
+	}
 }
 
 // onPeerDead is called when monitorPeers decides a peer has failed.
@@ -313,11 +363,11 @@ func main() {
 		node.peerConns[peer.ID] = conn
 	}
 
-	// TODO (Stage 3): create a context for background goroutines:
-	//   ctx, cancel := context.WithCancel(context.Background())
-	//   node.ctx = ctx
-	//   node.cancel = cancel
-	//   defer cancel()
+	ctx, cancel := context.WithCancel(context.Background())
+	node.ctx = ctx
+	node.cancel = cancel
+	node.onPeerDeadFunc = node.onPeerDead
+	defer cancel()
 
 	// Start the KVStore gRPC server (client-facing).
 	clientLis, err := net.Listen("tcp", self.ClientAddr)
@@ -342,8 +392,8 @@ func main() {
 	log.Printf("[node %d] starting as %s | client=%s peer=%s",
 		node.id, roleStr, self.ClientAddr, self.PeerAddr)
 
-	// TODO (Stage 3): go node.startHeartbeatLoop()
-	// TODO (Stage 3): go node.monitorPeers()
+	go node.startHeartbeatLoop()
+	go node.monitorPeers()
 
 	// Run both servers concurrently.
 	errCh := make(chan error, 2)
