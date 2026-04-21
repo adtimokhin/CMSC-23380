@@ -102,7 +102,7 @@ func newNode(id int32, cfg *config.ClusterConfig) *Node {
 	if id == 0 {
 		role = RolePrimary
 	}
-	return &Node{
+	n := &Node{
 		id:               id,
 		role:             role,
 		cfg:              cfg,
@@ -111,6 +111,8 @@ func newNode(id int32, cfg *config.ClusterConfig) *Node {
 		lastSeen:         make(map[int32]time.Time),
 		currentPrimaryID: 0, // node 0 is the initial primary
 	}
+	n.onPeerDeadFunc = n.onPeerDead
+	return n
 }
 
 // ── KVStore service (client-facing) ──────────────────────────────────────
