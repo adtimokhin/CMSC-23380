@@ -54,24 +54,55 @@ func dial(addr string) (*grpc.ClientConn, error) {
 //	  ERROR: could not reach primary after redirect
 //	and exit with status 1.
 func cmdPut(key, value, addr string) {
-	// TODO (Stage 1): implement Put RPC call
+	conn, err := dial(addr)
+	if err != nil {
+		log.Fatalf("dial %s: %v", addr, err)
+	}
+	defer conn.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	defer cancel()
+	resp, err := pb.NewKVStoreClient(conn).Put(ctx, &pb.PutRequest{Key: key, Value: value})
+	if err != nil {
+		log.Fatalf("put: %v", err)
+	}
 	// TODO (Stage 5): handle redirect_addr
-	fmt.Fprintln(os.Stderr, "TODO: implement put (Stage 1)")
-	os.Exit(1)
+	fmt.Printf("ok=%v lamport_ts=%d\n", resp.Ok, resp.LamportTs)
 }
 
 // cmdGet sends a Get RPC to addr and prints the result.
 func cmdGet(key, addr string) {
-	// TODO (Stage 1): implement Get RPC call
-	fmt.Fprintln(os.Stderr, "TODO: implement get (Stage 1)")
-	os.Exit(1)
+	conn, err := dial(addr)
+	if err != nil {
+		log.Fatalf("dial %s: %v", addr, err)
+	}
+	defer conn.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	defer cancel()
+	resp, err := pb.NewKVStoreClient(conn).Get(ctx, &pb.GetRequest{Key: key})
+	if err != nil {
+		log.Fatalf("get: %v", err)
+	}
+	if resp.Found {
+		fmt.Printf("found=true value=%s lamport_ts=%d\n", resp.Value, resp.LamportTs)
+	} else {
+		fmt.Println("found=false")
+	}
 }
 
 // cmdPrimary calls GetPrimary on addr and prints the current primary's address.
 func cmdPrimary(addr string) {
-	// TODO (Stage 1): implement GetPrimary RPC call
-	fmt.Fprintln(os.Stderr, "TODO: implement primary (Stage 1)")
-	os.Exit(1)
+	conn, err := dial(addr)
+	if err != nil {
+		log.Fatalf("dial %s: %v", addr, err)
+	}
+	defer conn.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	defer cancel()
+	resp, err := pb.NewKVStoreClient(conn).GetPrimary(ctx, &pb.Empty{})
+	if err != nil {
+		log.Fatalf("primary: %v", err)
+	}
+	fmt.Printf("primary_id=%d addr=%s\n", resp.PrimaryId, resp.PrimaryAddr)
 }
 
 func main() {
@@ -104,9 +135,4 @@ func main() {
 		usage()
 	}
 
-	// Suppress "declared but not used" errors on the helper until students implement.
-	_ = context.Background
-	_ = dial
-	_ = pb.NewKVStoreClient
-	_ = defaultTimeout
 }
