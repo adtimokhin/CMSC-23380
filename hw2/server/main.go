@@ -145,6 +145,7 @@ func (n *Node) Put(_ context.Context, req *pb.PutRequest) (*pb.PutResponse, erro
 	}
 
 	ts := n.clk.Tick()
+	replicateTimeout := ReplicateTimeout // capture once
 
 	var (
 		errMu    sync.Mutex
@@ -155,7 +156,7 @@ func (n *Node) Put(_ context.Context, req *pb.PutRequest) (*pb.PutResponse, erro
 		wg.Add(1)
 		go func(c *grpc.ClientConn) {
 			defer wg.Done()
-			ctx, cancel := context.WithTimeout(context.Background(), ReplicateTimeout)
+			ctx, cancel := context.WithTimeout(context.Background(), replicateTimeout)
 			defer cancel()
 			_, err := pb.NewReplicationClient(c).Replicate(ctx, &pb.ReplicateRequest{
 				Key:       req.Key,
@@ -277,7 +278,8 @@ func (n *Node) AnnounceLeader(_ context.Context, req *pb.AnnounceLeaderRequest) 
 //
 // Stage 3: implement this.
 func (n *Node) startHeartbeatLoop() {
-	ticker := time.NewTicker(HeartbeatInterval)
+	interval := HeartbeatInterval // capture once; tests restore the package var at cleanup
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
 		select {
@@ -292,7 +294,7 @@ func (n *Node) startHeartbeatLoop() {
 			n.mu.Unlock()
 			for peerID, conn := range peersCopy {
 				go func(id int32, c *grpc.ClientConn) {
-					ctx, cancel := context.WithTimeout(n.ctx, HeartbeatInterval*4/5)
+					ctx, cancel := context.WithTimeout(n.ctx, interval*4/5)
 					defer cancel()
 					ts := n.clk.Tick()
 					n.mu.Lock()
@@ -315,7 +317,9 @@ func (n *Node) startHeartbeatLoop() {
 // Stage 3: implement detection logic.
 // Stage 4: implement election trigger in onPeerDead.
 func (n *Node) monitorPeers() {
-	ticker := time.NewTicker(HeartbeatInterval)
+	interval := HeartbeatInterval // capture once; tests restore the package var at cleanup
+	timeout := HeartbeatTimeout
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
 		select {
@@ -333,7 +337,7 @@ func (n *Node) monitorPeers() {
 				ts, ok := n.lastSeen[peerID]
 				fn := n.onPeerDeadFunc
 				n.mu.Unlock()
-				if ok && time.Since(ts) > HeartbeatTimeout && fn != nil {
+				if ok && time.Since(ts) > timeout && fn != nil {
 					fn(peerID)
 				}
 			}
@@ -387,6 +391,8 @@ func (n *Node) runElection() {
 	}
 	n.mu.Unlock()
 
+	replicateTimeout := ReplicateTimeout // capture once
+
 	accepted := false
 	var survivingPeerID int32 = -1
 	var explicitlyRejected bool
@@ -395,7 +401,7 @@ func (n *Node) runElection() {
 			continue
 		}
 		survivingPeerID = id
-		ctx, cancel := context.WithTimeout(context.Background(), ReplicateTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), replicateTimeout)
 		resp, err := pb.NewReplicationClient(conn).AnnounceLeader(ctx, &pb.AnnounceLeaderRequest{
 			NewPrimaryId:    n.id,
 			ElectionLamport: electionTs,
@@ -415,7 +421,7 @@ func (n *Node) runElection() {
 		n.mu.Unlock()
 		log.Printf("[node %d] won election, becoming PRIMARY", n.id)
 		for _, conn := range peerConnsCopy {
-			ctx, cancel := context.WithTimeout(context.Background(), ReplicateTimeout)
+			ctx, cancel := context.WithTimeout(context.Background(), replicateTimeout)
 			pb.NewReplicationClient(conn).AnnounceLeader(ctx, &pb.AnnounceLeaderRequest{ //nolint:errcheck
 				NewPrimaryId:    n.id,
 				ElectionLamport: electionTs,
