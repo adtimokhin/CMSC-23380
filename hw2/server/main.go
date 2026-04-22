@@ -331,9 +331,10 @@ func (n *Node) monitorPeers() {
 			for _, peerID := range peers {
 				n.mu.Lock()
 				ts, ok := n.lastSeen[peerID]
+				fn := n.onPeerDeadFunc
 				n.mu.Unlock()
-				if ok && time.Since(ts) > HeartbeatTimeout {
-					n.onPeerDeadFunc(peerID)
+				if ok && time.Since(ts) > HeartbeatTimeout && fn != nil {
+					fn(peerID)
 				}
 			}
 		}
