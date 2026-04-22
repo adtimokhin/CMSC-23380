@@ -131,6 +131,10 @@ func (n *Node) Put(_ context.Context, req *pb.PutRequest) (*pb.PutResponse, erro
 	n.mu.Lock()
 	role := n.role
 	primaryID := n.currentPrimaryID
+	peerConnsCopy := make(map[int32]*grpc.ClientConn, len(n.peerConns))
+	for k, v := range n.peerConns {
+		peerConnsCopy[k] = v
+	}
 	n.mu.Unlock()
 	if role != RolePrimary {
 		primary, err := n.cfg.Self(primaryID)
@@ -147,7 +151,7 @@ func (n *Node) Put(_ context.Context, req *pb.PutRequest) (*pb.PutResponse, erro
 		firstErr error
 		wg       sync.WaitGroup
 	)
-	for _, conn := range n.peerConns {
+	for _, conn := range peerConnsCopy {
 		wg.Add(1)
 		go func(c *grpc.ClientConn) {
 			defer wg.Done()
@@ -280,7 +284,13 @@ func (n *Node) startHeartbeatLoop() {
 		case <-n.ctx.Done():
 			return
 		case <-ticker.C:
-			for peerID, conn := range n.peerConns {
+			n.mu.Lock()
+			peersCopy := make(map[int32]*grpc.ClientConn, len(n.peerConns))
+			for id, conn := range n.peerConns {
+				peersCopy[id] = conn
+			}
+			n.mu.Unlock()
+			for peerID, conn := range peersCopy {
 				go func(id int32, c *grpc.ClientConn) {
 					ctx, cancel := context.WithTimeout(n.ctx, HeartbeatInterval*4/5)
 					defer cancel()
@@ -370,13 +380,20 @@ func (n *Node) runElection() {
 	n.electionTs = n.clk.Tick()
 	electionTs := n.electionTs
 	deadPrimaryID := n.currentPrimaryID
+	peerConnsCopy := make(map[int32]*grpc.ClientConn, len(n.peerConns))
+	for k, v := range n.peerConns {
+		peerConnsCopy[k] = v
+	}
 	n.mu.Unlock()
 
 	accepted := false
-	for id, conn := range n.peerConns {
+	var survivingPeerID int32 = -1
+	var explicitlyRejected bool
+	for id, conn := range peerConnsCopy {
 		if id == deadPrimaryID {
 			continue
 		}
+		survivingPeerID = id
 		ctx, cancel := context.WithTimeout(context.Background(), ReplicateTimeout)
 		resp, err := pb.NewReplicationClient(conn).AnnounceLeader(ctx, &pb.AnnounceLeaderRequest{
 			NewPrimaryId:    n.id,
@@ -385,6 +402,7 @@ func (n *Node) runElection() {
 		cancel()
 		if err == nil {
 			accepted = resp.Accepted
+			explicitlyRejected = !accepted
 		}
 		break
 	}
@@ -395,7 +413,7 @@ func (n *Node) runElection() {
 		n.currentPrimaryID = n.id
 		n.mu.Unlock()
 		log.Printf("[node %d] won election, becoming PRIMARY", n.id)
-		for _, conn := range n.peerConns {
+		for _, conn := range peerConnsCopy {
 			ctx, cancel := context.WithTimeout(context.Background(), ReplicateTimeout)
 			pb.NewReplicationClient(conn).AnnounceLeader(ctx, &pb.AnnounceLeaderRequest{ //nolint:errcheck
 				NewPrimaryId:    n.id,
@@ -406,6 +424,11 @@ func (n *Node) runElection() {
 	} else {
 		n.mu.Lock()
 		n.role = RoleBackup
+		// If the peer explicitly rejected us, they won the election — update currentPrimaryID
+		// so Put redirects to the correct new primary without waiting for the broadcast.
+		if explicitlyRejected && survivingPeerID >= 0 {
+			n.currentPrimaryID = survivingPeerID
+		}
 		n.mu.Unlock()
 		log.Printf("[node %d] lost election, staying BACKUP", n.id)
 	}
