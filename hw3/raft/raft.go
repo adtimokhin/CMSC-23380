@@ -207,8 +207,23 @@ func (rf *Raft) Start(command string) (index int64, term int64, isLeader bool) {
 		return 0, rf.currentTerm, false
 	}
 
-	// TODO (Stage 2): append command to log, kick off replication
-	return 0, rf.currentTerm, false // placeholder
+	entry := ilog.LogEntry{
+		Index:   rf.log.LastIndex() + 1,
+		Term:    rf.currentTerm,
+		Command: command,
+	}
+	rf.log.Append(entry)
+
+	log.Printf("[DEVELOP] - node %d appended entry at index %d (term %d): %q", rf.id, entry.Index, entry.Term, command)
+
+	for _, p := range rf.peers {
+		if p.ID == rf.id {
+			continue
+		}
+		go rf.sendAppendEntries(p.ID)
+	}
+
+	return entry.Index, entry.Term, true
 }
 
 // GetState returns the current term and whether this node believes it is leader.
