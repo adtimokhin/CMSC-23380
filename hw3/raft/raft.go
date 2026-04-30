@@ -530,13 +530,84 @@ func (rf *Raft) sendHeartbeats() {
 //
 // TODO (Stage 2): implement log replication logic here.
 func (rf *Raft) sendAppendEntries(peerID int32) {
-	rf.mu.Lock()
-	if rf.state != Leader {
+	for {
+		rf.mu.Lock()
+		if rf.state != Leader {
+			rf.mu.Unlock()
+			return
+		}
+
+		ni := rf.nextIndex[peerID]
+		prevLogIndex := ni - 1
+		var prevLogTerm int64
+		if prevLogIndex > 0 {
+			if e, ok := rf.log.At(prevLogIndex); ok {
+				prevLogTerm = e.Term
+			}
+		}
+
+		ilogEntries := rf.log.Entries(ni, rf.log.LastIndex()+1)
+		pbEntries := make([]*pb.LogEntry, len(ilogEntries))
+		for i, e := range ilogEntries {
+			pbEntries[i] = &pb.LogEntry{Index: e.Index, Term: e.Term, Command: e.Command}
+		}
+
+		args := &pb.AppendEntriesArgs{
+			Term:         rf.currentTerm,
+			LeaderId:     rf.id,
+			PrevLogIndex: prevLogIndex,
+			PrevLogTerm:  prevLogTerm,
+			Entries:      pbEntries,
+			LeaderCommit: rf.commitIndex,
+		}
+		sentTerm := rf.currentTerm
+
+		log.Printf("[DEVELOP] - node %d → peer %d: AppendEntries prevIdx=%d entries=%d",
+			rf.id, peerID, prevLogIndex, len(pbEntries))
+
 		rf.mu.Unlock()
-		return
+
+		reply, err := rf.callAppendEntries(peerID, args)
+		if err != nil || reply == nil {
+			log.Printf("[DEVELOP] - node %d → peer %d: no reply (err=%v)", rf.id, peerID, err)
+			return
+		}
+
+		rf.mu.Lock()
+
+		if reply.Term > rf.currentTerm {
+			log.Printf("[DEVELOP] - node %d stepping down: peer %d has higher term %d", rf.id, peerID, reply.Term)
+			rf.becomeFollower(reply.Term)
+			rf.mu.Unlock()
+			return
+		}
+
+		// Discard stale replies (we may have changed term or lost leadership).
+		if rf.state != Leader || rf.currentTerm != sentTerm {
+			rf.mu.Unlock()
+			return
+		}
+
+		if reply.Success {
+			newMatch := prevLogIndex + int64(len(ilogEntries))
+			if newMatch > rf.matchIndex[peerID] {
+				rf.matchIndex[peerID] = newMatch
+				rf.nextIndex[peerID] = newMatch + 1
+			}
+			log.Printf("[DEVELOP] - node %d peer %d caught up to index %d", rf.id, peerID, newMatch)
+			rf.advanceCommitIndex()
+			rf.mu.Unlock()
+			return
+		}
+
+		// Follower rejected due to log inconsistency — back up and retry.
+		if rf.nextIndex[peerID] > 1 {
+			rf.nextIndex[peerID]--
+		}
+		log.Printf("[DEVELOP] - node %d peer %d inconsistency, backed nextIndex to %d", rf.id, peerID, rf.nextIndex[peerID])
+		rf.mu.Unlock()
+		// loop to retry with lower nextIndex
 	}
-	// TODO (Stage 2): build args using nextIndex[peerID]; send RPC; handle response
-	rf.mu.Unlock()
 }
 
 // advanceCommitIndex checks whether any new entries can be committed.
