@@ -322,10 +322,47 @@ func (rf *Raft) AppendEntries(_ context.Context, req *pb.AppendEntriesArgs) (*pb
 		rf.resetElectionTimer()
 	}
 
-	log.Printf("[DEVELOP] - node %d accepted heartbeat from leader %d (term %d)",
-		rf.id, req.LeaderId, req.Term)
+	// Consistency check: our log must agree with the leader at prevLogIndex.
+	if req.PrevLogIndex > 0 {
+		existing, ok := rf.log.At(req.PrevLogIndex)
+		if !ok || existing.Term != req.PrevLogTerm {
+			log.Printf("[DEVELOP] - node %d rejecting AppendEntries: inconsistency at prevLogIndex=%d (ok=%v)",
+				rf.id, req.PrevLogIndex, ok)
+			return &pb.AppendEntriesReply{Term: rf.currentTerm, Success: false}, nil
+		}
+	}
 
-	// TODO Stage 2: Implement log replication logic here.
+	// Merge entries: truncate on conflict, skip already-matching, append new.
+	for i, pbEntry := range req.Entries {
+		idx := req.PrevLogIndex + int64(i) + 1
+		existing, ok := rf.log.At(idx)
+		if ok {
+			if existing.Term == pbEntry.Term {
+				continue // entry already present and consistent
+			}
+			log.Printf("[DEVELOP] - node %d truncating log at index %d (conflict: our term=%d, leader term=%d)",
+				rf.id, idx, existing.Term, pbEntry.Term)
+			rf.log.Truncate(idx)
+		}
+		rf.log.Append(ilog.LogEntry{
+			Index:   pbEntry.Index,
+			Term:    pbEntry.Term,
+			Command: pbEntry.Command,
+		})
+		log.Printf("[DEVELOP] - node %d appended entry index=%d term=%d", rf.id, pbEntry.Index, pbEntry.Term)
+	}
+
+	// Advance commit index to min(leaderCommit, lastLogIndex).
+	if req.LeaderCommit > rf.commitIndex {
+		rf.commitIndex = req.LeaderCommit
+		if last := rf.log.LastIndex(); last < rf.commitIndex {
+			rf.commitIndex = last
+		}
+		log.Printf("[DEVELOP] - node %d advanced commitIndex to %d", rf.id, rf.commitIndex)
+	}
+
+	log.Printf("[DEVELOP] - node %d accepted AppendEntries from leader %d (term=%d entries=%d)",
+		rf.id, req.LeaderId, req.Term, len(req.Entries))
 	return &pb.AppendEntriesReply{Term: rf.currentTerm, Success: true}, nil
 }
 
