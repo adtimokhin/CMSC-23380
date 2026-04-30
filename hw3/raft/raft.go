@@ -292,9 +292,26 @@ func (rf *Raft) RequestVote(_ context.Context, req *pb.RequestVoteArgs) (*pb.Req
 func (rf *Raft) AppendEntries(_ context.Context, req *pb.AppendEntriesArgs) (*pb.AppendEntriesReply, error) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-	// TODO Stage 1: Perform the actions when a leader heartbeat is received.
-	// TODO Stage 2: Implement the log replication logic here.
-	return &pb.AppendEntriesReply{Term: rf.currentTerm, Success: false}, nil
+
+	if req.Term < rf.currentTerm {
+		log.Printf("[DEVELOP] - node %d rejecting AppendEntries from %d: stale term (%d < %d)",
+			rf.id, req.LeaderId, req.Term, rf.currentTerm)
+		return &pb.AppendEntriesReply{Term: rf.currentTerm, Success: false}, nil
+	}
+
+	if req.Term > rf.currentTerm {
+		log.Printf("[DEVELOP] - node %d stepping down to follower (saw higher term %d from leader %d)",
+			rf.id, req.Term, req.LeaderId)
+		rf.becomeFollower(req.Term)
+	} else {
+		rf.resetElectionTimer()
+	}
+
+	log.Printf("[DEVELOP] - node %d accepted heartbeat from leader %d (term %d)",
+		rf.id, req.LeaderId, req.Term)
+
+	// TODO Stage 2: Implement log replication logic here.
+	return &pb.AppendEntriesReply{Term: rf.currentTerm, Success: true}, nil
 }
 
 // InstallSnapshot handles a snapshot from the leader (optional extension only).
