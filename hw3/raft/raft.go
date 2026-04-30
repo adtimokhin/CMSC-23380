@@ -493,8 +493,6 @@ func (rf *Raft) sendHeartbeats() {
 			rf.mu.Unlock()
 			return
 		}
-		term := rf.currentTerm
-		commitIndex := rf.commitIndex
 		peers := rf.peers
 		rf.mu.Unlock()
 
@@ -502,25 +500,7 @@ func (rf *Raft) sendHeartbeats() {
 			if p.ID == rf.id {
 				continue
 			}
-			go func(peerID int32) {
-				args := &pb.AppendEntriesArgs{
-					Term:         term,
-					LeaderId:     rf.id,
-					LeaderCommit: commitIndex,
-				}
-				log.Printf("[DEVELOP] - node %d sending heartbeat to peer %d (term %d)", rf.id, peerID, term)
-				reply, err := rf.callAppendEntries(peerID, args)
-				if err != nil || reply == nil {
-					log.Printf("[DEVELOP] - node %d heartbeat to peer %d failed (err=%v)", rf.id, peerID, err)
-					return
-				}
-				rf.mu.Lock()
-				defer rf.mu.Unlock()
-				if reply.Term > rf.currentTerm {
-					log.Printf("[DEVELOP] - node %d stepping down: peer %d replied with higher term %d", rf.id, peerID, reply.Term)
-					rf.becomeFollower(reply.Term)
-				}
-			}(p.ID)
+			go rf.sendAppendEntries(p.ID)
 		}
 
 		time.Sleep(HeartbeatInterval)
