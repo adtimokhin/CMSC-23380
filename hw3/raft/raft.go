@@ -619,7 +619,27 @@ func (rf *Raft) sendAppendEntries(peerID int32) {
 //
 // TODO (Stage 2): implement this.
 func (rf *Raft) advanceCommitIndex() {
-	// TODO (Stage 2)
+	// Scan downward from the last log entry to find the highest index N that:
+	//   1. belongs to the current term (§5.4 — no committing old-term entries directly)
+	//   2. a majority of nodes (including self) have replicated up to N
+	for n := rf.log.LastIndex(); n > rf.commitIndex; n-- {
+		entry, ok := rf.log.At(n)
+		if !ok || entry.Term != rf.currentTerm {
+			continue
+		}
+		count := 1 // leader always has the entry
+		for _, p := range rf.peers {
+			if p.ID != rf.id && rf.matchIndex[p.ID] >= n {
+				count++
+			}
+		}
+		if count >= rf.quorum() {
+			log.Printf("[DEVELOP] - node %d commitIndex advanced to %d (replicated on %d/%d nodes)",
+				rf.id, n, count, len(rf.peers))
+			rf.commitIndex = n
+			return
+		}
+	}
 }
 
 // applyLoop runs in a goroutine, draining entries from lastApplied to
@@ -629,8 +649,30 @@ func (rf *Raft) advanceCommitIndex() {
 // TODO (Stage 2): implement this.
 func (rf *Raft) applyLoop() {
 	for !rf.killed() {
-		// TODO: sleep, check if lastApplied < commitIndex, send ApplyMsg
 		time.Sleep(10 * time.Millisecond)
+
+		rf.mu.Lock()
+		var toApply []ApplyMsg
+		for rf.lastApplied < rf.commitIndex {
+			rf.lastApplied++
+			entry, ok := rf.log.At(rf.lastApplied)
+			if !ok {
+				log.Printf("[DEVELOP] - node %d applyLoop: missing entry at index %d", rf.id, rf.lastApplied)
+				break
+			}
+			toApply = append(toApply, ApplyMsg{
+				Index:   entry.Index,
+				Term:    entry.Term,
+				Command: entry.Command,
+			})
+		}
+		rf.mu.Unlock()
+
+		for _, msg := range toApply {
+			log.Printf("[DEVELOP] - node %d applying entry index=%d term=%d cmd=%q",
+				rf.id, msg.Index, msg.Term, msg.Command)
+			rf.commitCh <- msg
+		}
 	}
 }
 
