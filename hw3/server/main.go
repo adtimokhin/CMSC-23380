@@ -93,15 +93,31 @@ func newServer(id int32, cfg *config.ClusterConfig) *Server {
 // Stage 2: implement this.
 // Stage 3: return redirect_addr when not leader.
 func (s *Server) Put(_ context.Context, req *pb.PutRequest) (*pb.PutResponse, error) {
-	// TODO (Stage 2):
-	//   1. Encode command: encodeCommand(req.Key, req.Value) → "put:<key>:<value>".
-	//   2. Call s.rf.Start(command) → (index, term, isLeader).
-	//   3. If !isLeader: return redirect to current leader (Stage 3).
-	//   4. Register a pendingPut at index.
-	//   5. Wait (with timeout) for applyLoop to close the channel.
-	//   6. If the committed entry's term matches: return ok=true.
-	//   7. If term mismatch (leader changed): return error.
-	return nil, status.Error(codes.Unimplemented, "TODO: implement Put (Stage 2)")
+	cmd := encodeCommand(req.Key, req.Value)
+	index, submittedTerm, isLeader := s.rf.Start(cmd)
+	if !isLeader {
+		// Stage 3 will add a redirect address; for now just signal non-leader.
+		return nil, status.Error(codes.FailedPrecondition, "not leader")
+	}
+
+	pp := &pendingPut{term: submittedTerm, ch: make(chan struct{})}
+	s.mu.Lock()
+	s.pending[index] = pp
+	s.mu.Unlock()
+
+	select {
+	case <-pp.ch:
+		// applyLoop wrote the committed term into pp.term before closing.
+		if pp.term != submittedTerm {
+			return nil, status.Error(codes.Aborted, "leadership changed: entry may not have committed")
+		}
+		return &pb.PutResponse{Ok: true}, nil
+	case <-time.After(5 * time.Second):
+		s.mu.Lock()
+		delete(s.pending, index)
+		s.mu.Unlock()
+		return nil, status.Error(codes.DeadlineExceeded, "timed out waiting for commit")
+	}
 }
 
 // Get reads from the local store. Reads are "stale" — they do not go through
@@ -155,11 +171,19 @@ func (s *Server) InstallSnapshot(ctx context.Context, req *pb.InstallSnapshotArg
 // Stage 2: implement this.
 func (s *Server) applyLoop(commitCh <-chan raft.ApplyMsg) {
 	for msg := range commitCh {
-		// TODO (Stage 2):
-		//   1. Decode command from msg.Command ("put:key:value" → store.Put)
-		//   2. Wake the pending Put handler at msg.Index, passing msg.Term
+		op, key, value := decodeCommand(msg.Command)
+		if op == "put" {
+			s.st.Put(key, value)
+		}
 
-		_ = msg // suppress unused warning until implemented
+		s.mu.Lock()
+		if pp, ok := s.pending[msg.Index]; ok {
+			// Overwrite term with the committed term so Put can detect leader changes.
+			pp.term = msg.Term
+			delete(s.pending, msg.Index)
+			close(pp.ch)
+		}
+		s.mu.Unlock()
 	}
 }
 
