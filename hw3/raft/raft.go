@@ -162,7 +162,7 @@ func NewPaused(id int32, cfg *config.ClusterConfig, commitCh chan ApplyMsg) *Raf
 		nextIndex:  make([]int64, n),
 		matchIndex: make([]int64, n),
 		peerConns:  make(map[int32]pb.RaftRPCClient),
-		commitCh: commitCh,
+		commitCh:   commitCh,
 	}
 }
 
@@ -308,12 +308,52 @@ func (rf *Raft) startElection() {
 		rf.mu.Unlock()
 		return
 	}
-	// TODO: increment term, set state=Candidate, vote for self, build RequestVoteArgs
+
+	rf.currentTerm++
+	rf.state = Candidate
+	rf.votedFor = rf.id
+	rf.resetElectionTimer()
+
+	term := rf.currentTerm
+	args := &pb.RequestVoteArgs{
+		Term:         term,
+		CandidateId:  rf.id,
+		LastLogIndex: rf.log.LastIndex(),
+		LastLogTerm:  rf.log.LastTerm(),
+	}
+	peers := rf.peers
 
 	rf.mu.Unlock()
 
-	// TODO: send RequestVote to all peers in parallel goroutines
-	// TODO: count votes; if majority, call becomeLeader()
+	votes := 1 // voted for self; shared under rf.mu in each goroutine below
+	for _, p := range peers {
+		if p.ID == rf.id {
+			continue
+		}
+		go func(peerID int32) {
+			reply, err := rf.callRequestVote(peerID, args)
+			if err != nil || reply == nil {
+				return
+			}
+
+			rf.mu.Lock()
+			defer rf.mu.Unlock()
+
+			if reply.Term > rf.currentTerm {
+				rf.becomeFollower(reply.Term)
+				return
+			}
+			if rf.state != Candidate || rf.currentTerm != term {
+				return
+			}
+			if reply.VoteGranted {
+				votes++
+				if votes >= rf.quorum() {
+					rf.becomeLeader()
+				}
+			}
+		}(p.ID)
+	}
 }
 
 // becomeLeader transitions to leader state, initializes nextIndex/matchIndex,
