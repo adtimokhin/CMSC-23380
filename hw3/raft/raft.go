@@ -494,6 +494,7 @@ func (rf *Raft) sendHeartbeats() {
 			return
 		}
 		term := rf.currentTerm
+		commitIndex := rf.commitIndex
 		peers := rf.peers
 		rf.mu.Unlock()
 
@@ -503,8 +504,9 @@ func (rf *Raft) sendHeartbeats() {
 			}
 			go func(peerID int32) {
 				args := &pb.AppendEntriesArgs{
-					Term:     term,
-					LeaderId: rf.id,
+					Term:         term,
+					LeaderId:     rf.id,
+					LeaderCommit: commitIndex,
 				}
 				log.Printf("[DEVELOP] - node %d sending heartbeat to peer %d (term %d)", rf.id, peerID, term)
 				reply, err := rf.callAppendEntries(peerID, args)
