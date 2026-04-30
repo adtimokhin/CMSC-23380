@@ -125,8 +125,8 @@ func (s *Server) Put(_ context.Context, req *pb.PutRequest) (*pb.PutResponse, er
 //
 // Stage 2: implement this.
 func (s *Server) Get(_ context.Context, req *pb.GetRequest) (*pb.GetResponse, error) {
-	// TODO (Stage 2): call s.st.Get(req.Key); return GetResponse{Found, Value}
-	return nil, status.Error(codes.Unimplemented, "TODO: implement Get (Stage 2)")
+	entry, found := s.st.Get(req.Key)
+	return &pb.GetResponse{Found: found, Value: entry.Value}, nil
 }
 
 // GetPrimary returns the ID and client address of the current Raft leader.
