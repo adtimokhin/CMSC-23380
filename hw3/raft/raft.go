@@ -402,8 +402,14 @@ func (rf *Raft) becomeLeader() {
 	// Must be called with mu held.
 	rf.state = Leader
 
-	// TODO (Stage 1): implement this method.
-	// TODO: start sendHeartbeats goroutine
+	lastIndex := rf.log.LastIndex()
+	for i := range rf.nextIndex {
+		rf.nextIndex[i] = lastIndex + 1
+		rf.matchIndex[i] = 0
+	}
+
+	log.Printf("[DEVELOP] - node %d became leader (term %d, nextIndex init to %d)", rf.id, rf.currentTerm, lastIndex+1)
+	go rf.sendHeartbeats()
 }
 
 // sendHeartbeats sends empty AppendEntries to all peers every HeartbeatInterval.
@@ -414,12 +420,38 @@ func (rf *Raft) sendHeartbeats() {
 	for !rf.killed() {
 		rf.mu.Lock()
 		if rf.state != Leader {
+			log.Printf("[DEVELOP] - node %d stopping heartbeat loop (no longer leader)", rf.id)
 			rf.mu.Unlock()
 			return
 		}
-		// TODO: compile the list of peers to send heartbeats to (all except self)
+		term := rf.currentTerm
+		peers := rf.peers
 		rf.mu.Unlock()
-		// TODO: send the Heartbeat messages (AppendEntries) to all peers
+
+		for _, p := range peers {
+			if p.ID == rf.id {
+				continue
+			}
+			go func(peerID int32) {
+				args := &pb.AppendEntriesArgs{
+					Term:     term,
+					LeaderId: rf.id,
+				}
+				log.Printf("[DEVELOP] - node %d sending heartbeat to peer %d (term %d)", rf.id, peerID, term)
+				reply, err := rf.callAppendEntries(peerID, args)
+				if err != nil || reply == nil {
+					log.Printf("[DEVELOP] - node %d heartbeat to peer %d failed (err=%v)", rf.id, peerID, err)
+					return
+				}
+				rf.mu.Lock()
+				defer rf.mu.Unlock()
+				if reply.Term > rf.currentTerm {
+					log.Printf("[DEVELOP] - node %d stepping down: peer %d replied with higher term %d", rf.id, peerID, reply.Term)
+					rf.becomeFollower(reply.Term)
+				}
+			}(p.ID)
+		}
+
 		time.Sleep(HeartbeatInterval)
 	}
 }
