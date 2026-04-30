@@ -1,0 +1,41 @@
+syntax = "proto3";
+package kvstore;
+option go_package = "kvraft/proto";
+
+// ── Client-facing service ─────────────────────────────────────────────────
+// Clients call Put and Get on whichever node address they know.
+// Put must eventually reach the current primary; a non-primary node returns
+// redirect_addr so the client can retry. Get may be served by any node
+// (reads may be stale on backups — students document the consistency model).
+
+service KVStore {
+  rpc Put(PutRequest) returns (PutResponse);
+  rpc Get(GetRequest) returns (GetResponse);
+  rpc GetPrimary(Empty) returns (GetPrimaryResponse);
+}
+
+message Empty {}
+
+message PutRequest {
+  string key   = 1;
+  string value = 2;
+}
+
+message PutResponse {
+  bool   ok            = 1;  // true = committed by Raft majority
+  string redirect_addr = 2;  // non-empty when ok=false and caller hit a non-leader
+}
+
+message GetRequest {
+  string key = 1;
+}
+
+message GetResponse {
+  bool   found = 1;
+  string value = 2;
+}
+
+message GetPrimaryResponse {
+  string primary_addr = 1;  // client-facing address of the current primary
+  int32  primary_id   = 2;
+}

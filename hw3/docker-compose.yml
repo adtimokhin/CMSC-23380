@@ -1,0 +1,35 @@
+services:
+  node0:
+    build: .
+    command: ["--id=0", "--config=/etc/kvraft/nodeconfig.json"]
+    volumes:
+      - ./nodeconfig-docker.json:/etc/kvraft/nodeconfig.json:ro
+    ports:
+      - "17000:17000"
+      - "17100:17100"
+    networks:
+      - raft
+  node1:
+    build: .
+    command: ["--id=1", "--config=/etc/kvraft/nodeconfig.json"]
+    volumes:
+      - ./nodeconfig-docker.json:/etc/kvraft/nodeconfig.json:ro
+    ports:
+      - "17001:17001"
+      - "17101:17101"
+    networks:
+      - raft
+  node2:
+    build: .
+    command: ["--id=2", "--config=/etc/kvraft/nodeconfig.json"]
+    volumes:
+      - ./nodeconfig-docker.json:/etc/kvraft/nodeconfig.json:ro
+    ports:
+      - "17002:17002"
+      - "17102:17102"
+    networks:
+      - raft
+
+networks:
+  raft:
+    driver: bridge
