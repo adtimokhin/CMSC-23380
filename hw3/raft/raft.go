@@ -323,6 +323,8 @@ func (rf *Raft) startElection() {
 	}
 	peers := rf.peers
 
+	log.Printf("[DEVELOP] - node %d starting election for term %d", rf.id, term)
+
 	rf.mu.Unlock()
 
 	votes := 1 // voted for self; shared under rf.mu in each goroutine below
@@ -331,8 +333,10 @@ func (rf *Raft) startElection() {
 			continue
 		}
 		go func(peerID int32) {
+			log.Printf("[DEVELOP] - node %d sending RequestVote to peer %d (term %d)", rf.id, peerID, term)
 			reply, err := rf.callRequestVote(peerID, args)
 			if err != nil || reply == nil {
+				log.Printf("[DEVELOP] - node %d got no reply from peer %d (err=%v)", rf.id, peerID, err)
 				return
 			}
 
@@ -340,17 +344,22 @@ func (rf *Raft) startElection() {
 			defer rf.mu.Unlock()
 
 			if reply.Term > rf.currentTerm {
+				log.Printf("[DEVELOP] - node %d stepping down: peer %d replied with higher term %d", rf.id, peerID, reply.Term)
 				rf.becomeFollower(reply.Term)
 				return
 			}
 			if rf.state != Candidate || rf.currentTerm != term {
+				log.Printf("[DEVELOP] - node %d discarding stale vote reply from peer %d", rf.id, peerID)
 				return
 			}
 			if reply.VoteGranted {
 				votes++
+				log.Printf("[DEVELOP] - node %d got vote from peer %d (%d/%d needed)", rf.id, peerID, votes, rf.quorum())
 				if votes >= rf.quorum() {
 					rf.becomeLeader()
 				}
+			} else {
+				log.Printf("[DEVELOP] - node %d vote denied by peer %d", rf.id, peerID)
 			}
 		}(p.ID)
 	}
