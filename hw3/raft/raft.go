@@ -244,13 +244,42 @@ func (rf *Raft) killed() bool {
 //
 // If the vote is granted, reset the election timer.
 func (rf *Raft) RequestVote(_ context.Context, req *pb.RequestVoteArgs) (*pb.RequestVoteReply, error) {
-
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
-	// TODO (Stage 1) - Implement the Raft Vote Handling Logic here
-	// Replace the following placeholder return statement with your implementation.
-	return &pb.RequestVoteReply{Term: rf.currentTerm, VoteGranted: false}, nil
+	log.Printf("[DEVELOP] - node %d received RequestVote from candidate %d (req.Term=%d, our term=%d)",
+		rf.id, req.CandidateId, req.Term, rf.currentTerm)
+
+	if req.Term < rf.currentTerm {
+		log.Printf("[DEVELOP] - node %d denying vote to %d: stale term (%d < %d)",
+			rf.id, req.CandidateId, req.Term, rf.currentTerm)
+		return &pb.RequestVoteReply{Term: rf.currentTerm, VoteGranted: false}, nil
+	}
+
+	if req.Term > rf.currentTerm {
+		log.Printf("[DEVELOP] - node %d stepping down to follower (saw higher term %d)", rf.id, req.Term)
+		rf.becomeFollower(req.Term)
+	}
+
+	alreadyVoted := rf.votedFor != -1 && rf.votedFor != req.CandidateId
+	logOK := req.LastLogTerm > rf.log.LastTerm() ||
+		(req.LastLogTerm == rf.log.LastTerm() && req.LastLogIndex >= rf.log.LastIndex())
+
+	if alreadyVoted {
+		log.Printf("[DEVELOP] - node %d denying vote to %d: already voted for %d this term",
+			rf.id, req.CandidateId, rf.votedFor)
+		return &pb.RequestVoteReply{Term: rf.currentTerm, VoteGranted: false}, nil
+	}
+	if !logOK {
+		log.Printf("[DEVELOP] - node %d denying vote to %d: candidate log not up-to-date",
+			rf.id, req.CandidateId)
+		return &pb.RequestVoteReply{Term: rf.currentTerm, VoteGranted: false}, nil
+	}
+
+	rf.votedFor = req.CandidateId
+	rf.resetElectionTimer()
+	log.Printf("[DEVELOP] - node %d granted vote to %d (term %d)", rf.id, req.CandidateId, rf.currentTerm)
+	return &pb.RequestVoteReply{Term: rf.currentTerm, VoteGranted: true}, nil
 }
 
 // AppendEntries handles a log replication RPC from the leader.
