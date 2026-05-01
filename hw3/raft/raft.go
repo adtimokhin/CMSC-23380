@@ -583,8 +583,17 @@ func (rf *Raft) sendAppendEntries(peerID int32) {
 				rf.nextIndex[peerID] = newMatch + 1
 			}
 			log.Printf("[DEVELOP] - node %d peer %d caught up to index %d", rf.id, peerID, newMatch)
+			oldCommit := rf.commitIndex
 			rf.advanceCommitIndex()
+			commitAdvanced := rf.commitIndex > oldCommit
 			rf.mu.Unlock()
+
+			if commitAdvanced {
+				// Immediately send an empty AppendEntries so this peer learns the
+				// new commitIndex without waiting for the next heartbeat. This
+				// prevents losing committed entries if the leader dies soon after.
+				continue
+			}
 			return
 		}
 
