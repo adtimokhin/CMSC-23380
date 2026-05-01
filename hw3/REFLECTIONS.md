@@ -1,17 +1,17 @@
 # HW3 Reflections
 
-**Name:**
-**GitHub Username:**
-**Hours spent:**
+**Name:** Aleksandr Timokhin
+**GitHub Username:** adtimokhin
+**Hours spent:** 5
 
 ---
 
 ## Stage Progress
 
-- [ ] Stage 1 — Leader election
-- [ ] Stage 2 — Log replication
-- [ ] Stage 3 — Safety under failures
-- [ ] Extension — Log compaction
+- [x] Stage 1 — Leader election
+- [x] Stage 2 — Log replication
+- [x]  Stage 3 — Safety under failures
+- [] Extension — Log compaction
 
 ---
 
@@ -27,6 +27,15 @@ safe (can it commit new entries)?
 
 **Your answer:**
 
+In RAFT at most one leader can exist (so two leaders is impossible).
+
+When followers do not hear from a leader for some time (random value in the range [ElectionTimeoutMin, ElectionTimeoutMax]) they start an election with a higher term number than current. If the other followers consider that new candidate has up-to-date log they will vote for him and switch to them as a new leader.
+
+In election only one leader can emerge due to majority quorum - the number of votes needed is n/2 + 1, so if there are 2 candidates. Even if two candidates fire election purposal simultaneously they still need a mojority to become a leader.
+
+Imagine a network partition where the leader looses connection to followers. In the meantime, a new leader is elected with the higher term than the last leader. That last leader then comes back to life and tries to send a message to other nodes with a lower term number. It receives a response from servers, telling them that the current term is higher, and it immediatelly switches to being a follower.
+
+Though for some time there might be two or more machines who believe to be leaders, in actuallity the cluster will have only one actual leader.
 ---
 
 ### Q2 — HW2 comparison (Lec 4)
