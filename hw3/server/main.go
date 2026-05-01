@@ -136,6 +136,15 @@ func (s *Server) Get(_ context.Context, req *pb.GetRequest) (*pb.GetResponse, er
 // Stage 3: implement this. You need to track the leader ID as nodes receive
 // AppendEntries RPCs (the leader always sends its own ID in LeaderId).
 func (s *Server) GetPrimary(_ context.Context, _ *pb.Empty) (*pb.GetPrimaryResponse, error) {
+	// If this node is the leader, it never receives its own AppendEntries,
+	// so leaderID is never updated on the leader itself. Check directly.
+	if _, isLeader := s.rf.GetState(); isLeader {
+		return &pb.GetPrimaryResponse{
+			PrimaryId:   s.id,
+			PrimaryAddr: s.cfg.Nodes[s.id].ClientAddr,
+		}, nil
+	}
+
 	s.mu.Lock()
 	id := s.leaderID
 	s.mu.Unlock()
