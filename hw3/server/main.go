@@ -98,8 +98,7 @@ func (s *Server) Put(_ context.Context, req *pb.PutRequest) (*pb.PutResponse, er
 	cmd := encodeCommand(req.Key, req.Value)
 	index, submittedTerm, isLeader := s.rf.Start(cmd)
 	if !isLeader {
-		// Stage 3 will add a redirect address; for now just signal non-leader.
-		return nil, status.Error(codes.FailedPrecondition, "not leader")
+		return &pb.PutResponse{Ok: false, RedirectAddr: s.currentLeaderAddr()}, nil
 	}
 
 	pp := &pendingPut{term: submittedTerm, ch: make(chan struct{})}
@@ -220,11 +219,13 @@ func decodeCommand(cmd string) (op, key, value string) {
 //
 // TODO (Stage 3): implement using GetState() and scanning cfg.Nodes.
 func (s *Server) currentLeaderAddr() string {
-	// Hint: s.rf.GetState() returns (term, isLeader).
-	// Raft does not directly expose the leader's ID to the server.
-	// One approach: store the last known leaderID in the Server struct,
-	// updated whenever AppendEntries is called (the leader sends its ID).
-	return ""
+	s.mu.Lock()
+	id := s.leaderID
+	s.mu.Unlock()
+	if id < 0 || int(id) >= len(s.cfg.Nodes) {
+		return ""
+	}
+	return s.cfg.Nodes[id].ClientAddr
 }
 
 // ── main ──────────────────────────────────────────────────────────────────
