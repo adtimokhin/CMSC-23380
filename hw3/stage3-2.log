@@ -1,0 +1,411 @@
+go test ./server/... -v -race -run TestStage3 -timeout 120s
+=== RUN   TestStage3_PutOnNonLeaderReturnsRedirect
+2026/05/01 10:16:43 [DEVELOP] - node 0 starting election for term 1
+2026/05/01 10:16:43 [DEVELOP] - node 0 sending RequestVote to peer 2 (term 1)
+2026/05/01 10:16:43 [DEVELOP] - node 0 sending RequestVote to peer 1 (term 1)
+2026/05/01 10:16:43 [DEVELOP] - node 2 received RequestVote from candidate 0 (req.Term=1, our term=0)
+2026/05/01 10:16:43 [DEVELOP] - node 1 received RequestVote from candidate 0 (req.Term=1, our term=0)
+2026/05/01 10:16:43 [DEVELOP] - node 2 stepping down to follower (saw higher term 1)
+2026/05/01 10:16:43 [DEVELOP] - node 1 stepping down to follower (saw higher term 1)
+2026/05/01 10:16:43 [DEVELOP] - node 2 granted vote to 0 (term 1)
+2026/05/01 10:16:43 [DEVELOP] - node 1 granted vote to 0 (term 1)
+2026/05/01 10:16:43 [DEVELOP] - node 0 got vote from peer 1 (2/2 needed)
+2026/05/01 10:16:43 [DEVELOP] - node 0 became leader (term 1, appended noop at index 1)
+2026/05/01 10:16:43 [DEVELOP] - node 0 discarding stale vote reply from peer 2
+2026/05/01 10:16:43 [DEVELOP] - node 0 → peer 1: AppendEntries prevIdx=0 entries=1
+2026/05/01 10:16:43 [DEVELOP] - node 0 → peer 2: AppendEntries prevIdx=0 entries=1
+2026/05/01 10:16:43 [DEVELOP] - node 1 appended entry index=1 term=1
+2026/05/01 10:16:43 [DEVELOP] - node 1 accepted AppendEntries from leader 0 (term=1 entries=1)
+2026/05/01 10:16:43 [DEVELOP] - node 2 appended entry index=1 term=1
+2026/05/01 10:16:43 [DEVELOP] - node 2 accepted AppendEntries from leader 0 (term=1 entries=1)
+2026/05/01 10:16:43 [DEVELOP] - node 0 peer 1 caught up to index 1
+2026/05/01 10:16:43 [DEVELOP] - node 0 commitIndex advanced to 1 (replicated on 2/3 nodes)
+2026/05/01 10:16:43 [DEVELOP] - node 0 peer 2 caught up to index 1
+2026/05/01 10:16:43 [DEVELOP] - node 0 applying entry index=1 term=1 cmd="noop"
+--- PASS: TestStage3_PutOnNonLeaderReturnsRedirect (0.27s)
+=== RUN   TestStage3_GetPrimaryReturnsLeader
+2026/05/01 10:16:43 [DEVELOP] - node 0 starting election for term 1
+2026/05/01 10:16:43 [DEVELOP] - node 0 sending RequestVote to peer 2 (term 1)
+2026/05/01 10:16:43 [DEVELOP] - node 0 sending RequestVote to peer 1 (term 1)
+2026/05/01 10:16:43 [DEVELOP] - node 2 received RequestVote from candidate 0 (req.Term=1, our term=0)
+2026/05/01 10:16:43 [DEVELOP] - node 2 stepping down to follower (saw higher term 1)
+2026/05/01 10:16:43 [DEVELOP] - node 1 received RequestVote from candidate 0 (req.Term=1, our term=0)
+2026/05/01 10:16:43 [DEVELOP] - node 2 granted vote to 0 (term 1)
+2026/05/01 10:16:43 [DEVELOP] - node 1 stepping down to follower (saw higher term 1)
+2026/05/01 10:16:43 [DEVELOP] - node 1 granted vote to 0 (term 1)
+2026/05/01 10:16:43 [DEVELOP] - node 0 got vote from peer 2 (2/2 needed)
+2026/05/01 10:16:43 [DEVELOP] - node 0 became leader (term 1, appended noop at index 1)
+2026/05/01 10:16:43 [DEVELOP] - node 0 discarding stale vote reply from peer 1
+2026/05/01 10:16:43 [DEVELOP] - node 0 → peer 1: AppendEntries prevIdx=0 entries=1
+2026/05/01 10:16:43 [DEVELOP] - node 0 → peer 2: AppendEntries prevIdx=0 entries=1
+2026/05/01 10:16:43 [DEVELOP] - node 1 appended entry index=1 term=1
+2026/05/01 10:16:43 [DEVELOP] - node 1 accepted AppendEntries from leader 0 (term=1 entries=1)
+2026/05/01 10:16:43 [DEVELOP] - node 2 appended entry index=1 term=1
+2026/05/01 10:16:43 [DEVELOP] - node 2 accepted AppendEntries from leader 0 (term=1 entries=1)
+2026/05/01 10:16:43 [DEVELOP] - node 0 peer 1 caught up to index 1
+2026/05/01 10:16:43 [DEVELOP] - node 0 commitIndex advanced to 1 (replicated on 2/3 nodes)
+2026/05/01 10:16:43 [DEVELOP] - node 0 peer 2 caught up to index 1
+2026/05/01 10:16:43 [DEVELOP] - node 0 applying entry index=1 term=1 cmd="noop"
+--- PASS: TestStage3_GetPrimaryReturnsLeader (0.18s)
+=== RUN   TestStage3_CommitSurvivesLeaderCrash
+2026/05/01 10:16:43 [DEVELOP] - node 0 starting election for term 1
+2026/05/01 10:16:43 [DEVELOP] - node 0 sending RequestVote to peer 1 (term 1)
+2026/05/01 10:16:43 [DEVELOP] - node 0 sending RequestVote to peer 2 (term 1)
+2026/05/01 10:16:43 [DEVELOP] - node 1 received RequestVote from candidate 0 (req.Term=1, our term=0)
+2026/05/01 10:16:43 [DEVELOP] - node 2 received RequestVote from candidate 0 (req.Term=1, our term=0)
+2026/05/01 10:16:43 [DEVELOP] - node 1 stepping down to follower (saw higher term 1)
+2026/05/01 10:16:43 [DEVELOP] - node 2 stepping down to follower (saw higher term 1)
+2026/05/01 10:16:43 [DEVELOP] - node 1 granted vote to 0 (term 1)
+2026/05/01 10:16:43 [DEVELOP] - node 2 granted vote to 0 (term 1)
+2026/05/01 10:16:43 [DEVELOP] - node 0 got vote from peer 1 (2/2 needed)
+2026/05/01 10:16:43 [DEVELOP] - node 0 became leader (term 1, appended noop at index 1)
+2026/05/01 10:16:43 [DEVELOP] - node 0 discarding stale vote reply from peer 2
+2026/05/01 10:16:43 [DEVELOP] - node 0 → peer 1: AppendEntries prevIdx=0 entries=1
+2026/05/01 10:16:43 [DEVELOP] - node 0 → peer 2: AppendEntries prevIdx=0 entries=1
+2026/05/01 10:16:43 [DEVELOP] - node 1 appended entry index=1 term=1
+2026/05/01 10:16:43 [DEVELOP] - node 1 accepted AppendEntries from leader 0 (term=1 entries=1)
+2026/05/01 10:16:43 [DEVELOP] - node 2 appended entry index=1 term=1
+2026/05/01 10:16:43 [DEVELOP] - node 2 accepted AppendEntries from leader 0 (term=1 entries=1)
+2026/05/01 10:16:43 [DEVELOP] - node 0 peer 1 caught up to index 1
+2026/05/01 10:16:43 [DEVELOP] - node 0 commitIndex advanced to 1 (replicated on 2/3 nodes)
+2026/05/01 10:16:43 [DEVELOP] - node 0 peer 2 caught up to index 1
+2026/05/01 10:16:43 [DEVELOP] - node 0 applying entry index=1 term=1 cmd="noop"
+2026/05/01 10:16:43 [DEVELOP] - node 0 appended entry at index 2 (term 1): "put:k1:v1"
+2026/05/01 10:16:43 [DEVELOP] - node 0 → peer 1: AppendEntries prevIdx=1 entries=1
+2026/05/01 10:16:43 [DEVELOP] - node 0 → peer 2: AppendEntries prevIdx=1 entries=1
+2026/05/01 10:16:43 [DEVELOP] - node 1 appended entry index=2 term=1
+2026/05/01 10:16:43 [DEVELOP] - node 1 advanced commitIndex to 1
+2026/05/01 10:16:43 [DEVELOP] - node 1 accepted AppendEntries from leader 0 (term=1 entries=1)
+2026/05/01 10:16:43 [DEVELOP] - node 2 appended entry index=2 term=1
+2026/05/01 10:16:43 [DEVELOP] - node 2 advanced commitIndex to 1
+2026/05/01 10:16:43 [DEVELOP] - node 2 accepted AppendEntries from leader 0 (term=1 entries=1)
+2026/05/01 10:16:43 [DEVELOP] - node 0 peer 1 caught up to index 2
+2026/05/01 10:16:43 [DEVELOP] - node 0 commitIndex advanced to 2 (replicated on 2/3 nodes)
+2026/05/01 10:16:43 [DEVELOP] - node 0 peer 2 caught up to index 2
+2026/05/01 10:16:43 [DEVELOP] - node 1 applying entry index=1 term=1 cmd="noop"
+2026/05/01 10:16:43 [DEVELOP] - node 0 applying entry index=2 term=1 cmd="put:k1:v1"
+2026/05/01 10:16:43 [DEVELOP] - node 2 applying entry index=1 term=1 cmd="noop"
+2026/05/01 10:16:43 [DEVELOP] - node 0 appended entry at index 3 (term 1): "put:k2:v2"
+2026/05/01 10:16:43 [DEVELOP] - node 0 → peer 2: AppendEntries prevIdx=2 entries=1
+2026/05/01 10:16:43 [DEVELOP] - node 0 → peer 1: AppendEntries prevIdx=2 entries=1
+2026/05/01 10:16:43 [DEVELOP] - node 2 appended entry index=3 term=1
+2026/05/01 10:16:43 [DEVELOP] - node 1 appended entry index=3 term=1
+2026/05/01 10:16:43 [DEVELOP] - node 2 advanced commitIndex to 2
+2026/05/01 10:16:43 [DEVELOP] - node 1 advanced commitIndex to 2
+2026/05/01 10:16:43 [DEVELOP] - node 2 accepted AppendEntries from leader 0 (term=1 entries=1)
+2026/05/01 10:16:43 [DEVELOP] - node 1 accepted AppendEntries from leader 0 (term=1 entries=1)
+2026/05/01 10:16:43 [DEVELOP] - node 0 peer 2 caught up to index 3
+2026/05/01 10:16:43 [DEVELOP] - node 0 commitIndex advanced to 3 (replicated on 2/3 nodes)
+2026/05/01 10:16:43 [DEVELOP] - node 0 peer 1 caught up to index 3
+2026/05/01 10:16:43 [DEVELOP] - node 1 applying entry index=2 term=1 cmd="put:k1:v1"
+2026/05/01 10:16:43 [DEVELOP] - node 0 applying entry index=3 term=1 cmd="put:k2:v2"
+2026/05/01 10:16:43 [DEVELOP] - node 2 applying entry index=2 term=1 cmd="put:k1:v1"
+2026/05/01 10:16:43 [DEVELOP] - node 0 appended entry at index 4 (term 1): "put:k3:v3"
+2026/05/01 10:16:43 [DEVELOP] - node 0 → peer 2: AppendEntries prevIdx=3 entries=1
+2026/05/01 10:16:43 [DEVELOP] - node 0 → peer 1: AppendEntries prevIdx=3 entries=1
+2026/05/01 10:16:43 [DEVELOP] - node 2 appended entry index=4 term=1
+2026/05/01 10:16:43 [DEVELOP] - node 2 advanced commitIndex to 3
+2026/05/01 10:16:43 [DEVELOP] - node 2 accepted AppendEntries from leader 0 (term=1 entries=1)
+2026/05/01 10:16:43 [DEVELOP] - node 1 appended entry index=4 term=1
+2026/05/01 10:16:43 [DEVELOP] - node 1 advanced commitIndex to 3
+2026/05/01 10:16:43 [DEVELOP] - node 1 accepted AppendEntries from leader 0 (term=1 entries=1)
+2026/05/01 10:16:43 [DEVELOP] - node 0 peer 2 caught up to index 4
+2026/05/01 10:16:43 [DEVELOP] - node 0 commitIndex advanced to 4 (replicated on 2/3 nodes)
+2026/05/01 10:16:43 [DEVELOP] - node 0 peer 1 caught up to index 4
+2026/05/01 10:16:43 [DEVELOP] - node 0 applying entry index=4 term=1 cmd="put:k3:v3"
+2026/05/01 10:16:43 [DEVELOP] - node 2 applying entry index=3 term=1 cmd="put:k2:v2"
+2026/05/01 10:16:43 [DEVELOP] - node 1 applying entry index=3 term=1 cmd="put:k2:v2"
+2026/05/01 10:16:43 [DEVELOP] - node 2 starting election for term 2
+2026/05/01 10:16:43 [DEVELOP] - node 2 sending RequestVote to peer 1 (term 2)
+2026/05/01 10:16:43 [DEVELOP] - node 2 sending RequestVote to peer 0 (term 2)
+2026/05/01 10:16:43 [DEVELOP] - node 2 got no reply from peer 0 (err=rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: node 0 has been killed")
+2026/05/01 10:16:43 [DEVELOP] - node 1 received RequestVote from candidate 2 (req.Term=2, our term=1)
+2026/05/01 10:16:43 [DEVELOP] - node 1 stepping down to follower (saw higher term 2)
+2026/05/01 10:16:43 [DEVELOP] - node 1 granted vote to 2 (term 2)
+2026/05/01 10:16:43 [DEVELOP] - node 2 got vote from peer 1 (2/2 needed)
+2026/05/01 10:16:43 [DEVELOP] - node 2 became leader (term 2, appended noop at index 5)
+2026/05/01 10:16:43 [DEVELOP] - node 2 → peer 1: AppendEntries prevIdx=4 entries=1
+2026/05/01 10:16:43 [DEVELOP] - node 2 → peer 0: AppendEntries prevIdx=4 entries=1
+2026/05/01 10:16:43 [DEVELOP] - node 2 → peer 0: no reply (err=rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: node 0 has been killed")
+2026/05/01 10:16:43 [DEVELOP] - node 1 appended entry index=5 term=2
+2026/05/01 10:16:43 [DEVELOP] - node 1 accepted AppendEntries from leader 2 (term=2 entries=1)
+2026/05/01 10:16:43 [DEVELOP] - node 2 peer 1 caught up to index 5
+2026/05/01 10:16:43 [DEVELOP] - node 2 commitIndex advanced to 5 (replicated on 2/3 nodes)
+2026/05/01 10:16:43 [DEVELOP] - node 2 applying entry index=4 term=1 cmd="put:k3:v3"
+2026/05/01 10:16:43 [DEVELOP] - node 2 applying entry index=5 term=2 cmd="noop"
+--- PASS: TestStage3_CommitSurvivesLeaderCrash (0.45s)
+=== RUN   TestStage3_PartitionAndRecovery
+2026/05/01 10:16:44 [DEVELOP] - node 0 starting election for term 1
+2026/05/01 10:16:44 [DEVELOP] - node 0 sending RequestVote to peer 2 (term 1)
+2026/05/01 10:16:44 [DEVELOP] - node 0 sending RequestVote to peer 1 (term 1)
+2026/05/01 10:16:44 [DEVELOP] - node 1 starting election for term 1
+2026/05/01 10:16:44 [DEVELOP] - node 1 sending RequestVote to peer 2 (term 1)
+2026/05/01 10:16:44 [DEVELOP] - node 1 sending RequestVote to peer 0 (term 1)
+2026/05/01 10:16:44 [DEVELOP] - node 2 received RequestVote from candidate 0 (req.Term=1, our term=0)
+2026/05/01 10:16:44 [DEVELOP] - node 2 stepping down to follower (saw higher term 1)
+2026/05/01 10:16:44 [DEVELOP] - node 2 granted vote to 0 (term 1)
+2026/05/01 10:16:44 [DEVELOP] - node 2 received RequestVote from candidate 1 (req.Term=1, our term=1)
+2026/05/01 10:16:44 [DEVELOP] - node 2 denying vote to 1: already voted for 0 this term
+2026/05/01 10:16:44 [DEVELOP] - node 0 got vote from peer 2 (2/2 needed)
+2026/05/01 10:16:44 [DEVELOP] - node 0 became leader (term 1, appended noop at index 1)
+2026/05/01 10:16:44 [DEVELOP] - node 0 → peer 2: AppendEntries prevIdx=0 entries=1
+2026/05/01 10:16:44 [DEVELOP] - node 0 → peer 1: AppendEntries prevIdx=0 entries=1
+2026/05/01 10:16:44 [DEVELOP] - node 1 vote denied by peer 2
+2026/05/01 10:16:44 [DEVELOP] - node 0 received RequestVote from candidate 1 (req.Term=1, our term=1)
+2026/05/01 10:16:44 [DEVELOP] - node 0 denying vote to 1: already voted for 0 this term
+2026/05/01 10:16:44 [DEVELOP] - node 2 appended entry index=1 term=1
+2026/05/01 10:16:44 [DEVELOP] - node 2 accepted AppendEntries from leader 0 (term=1 entries=1)
+2026/05/01 10:16:44 [DEVELOP] - node 0 peer 2 caught up to index 1
+2026/05/01 10:16:44 [DEVELOP] - node 1 vote denied by peer 0
+2026/05/01 10:16:44 [DEVELOP] - node 0 commitIndex advanced to 1 (replicated on 2/3 nodes)
+2026/05/01 10:16:44 [DEVELOP] - node 1 received RequestVote from candidate 0 (req.Term=1, our term=1)
+2026/05/01 10:16:44 [DEVELOP] - node 1 denying vote to 0: already voted for 1 this term
+2026/05/01 10:16:44 [DEVELOP] - node 1 appended entry index=1 term=1
+2026/05/01 10:16:44 [DEVELOP] - node 1 accepted AppendEntries from leader 0 (term=1 entries=1)
+2026/05/01 10:16:44 [DEVELOP] - node 0 discarding stale vote reply from peer 1
+2026/05/01 10:16:44 [DEVELOP] - node 0 peer 1 caught up to index 1
+2026/05/01 10:16:44 [DEVELOP] - node 0 applying entry index=1 term=1 cmd="noop"
+2026/05/01 10:16:44 [DEVELOP] - node 0 appended entry at index 2 (term 1): "put:k:0"
+2026/05/01 10:16:44 [DEVELOP] - node 0 → peer 1: AppendEntries prevIdx=1 entries=1
+2026/05/01 10:16:44 [DEVELOP] - node 0 → peer 1: no reply (err=rpc error: code = Unavailable desc = partitioned)
+2026/05/01 10:16:44 [DEVELOP] - node 0 → peer 2: AppendEntries prevIdx=1 entries=1
+2026/05/01 10:16:44 [DEVELOP] - node 2 appended entry index=2 term=1
+2026/05/01 10:16:44 [DEVELOP] - node 2 advanced commitIndex to 1
+2026/05/01 10:16:44 [DEVELOP] - node 2 accepted AppendEntries from leader 0 (term=1 entries=1)
+2026/05/01 10:16:44 [DEVELOP] - node 0 peer 2 caught up to index 2
+2026/05/01 10:16:44 [DEVELOP] - node 0 commitIndex advanced to 2 (replicated on 2/3 nodes)
+2026/05/01 10:16:44 [DEVELOP] - node 2 applying entry index=1 term=1 cmd="noop"
+2026/05/01 10:16:44 [DEVELOP] - node 0 applying entry index=2 term=1 cmd="put:k:0"
+2026/05/01 10:16:44 [DEVELOP] - node 0 appended entry at index 3 (term 1): "put:k:1"
+2026/05/01 10:16:44 [DEVELOP] - node 0 → peer 2: AppendEntries prevIdx=2 entries=1
+2026/05/01 10:16:44 [DEVELOP] - node 0 → peer 1: AppendEntries prevIdx=1 entries=2
+2026/05/01 10:16:44 [DEVELOP] - node 0 → peer 1: no reply (err=rpc error: code = Unavailable desc = partitioned)
+2026/05/01 10:16:44 [DEVELOP] - node 2 appended entry index=3 term=1
+2026/05/01 10:16:44 [DEVELOP] - node 2 advanced commitIndex to 2
+2026/05/01 10:16:44 [DEVELOP] - node 2 accepted AppendEntries from leader 0 (term=1 entries=1)
+2026/05/01 10:16:44 [DEVELOP] - node 0 peer 2 caught up to index 3
+2026/05/01 10:16:44 [DEVELOP] - node 0 commitIndex advanced to 3 (replicated on 2/3 nodes)
+2026/05/01 10:16:44 [DEVELOP] - node 2 applying entry index=2 term=1 cmd="put:k:0"
+2026/05/01 10:16:44 [DEVELOP] - node 0 applying entry index=3 term=1 cmd="put:k:1"
+2026/05/01 10:16:44 [DEVELOP] - node 0 appended entry at index 4 (term 1): "put:k:2"
+2026/05/01 10:16:44 [DEVELOP] - node 0 → peer 1: AppendEntries prevIdx=1 entries=3
+2026/05/01 10:16:44 [DEVELOP] - node 0 → peer 1: no reply (err=rpc error: code = Unavailable desc = partitioned)
+2026/05/01 10:16:44 [DEVELOP] - node 0 → peer 2: AppendEntries prevIdx=3 entries=1
+2026/05/01 10:16:44 [DEVELOP] - node 2 appended entry index=4 term=1
+2026/05/01 10:16:44 [DEVELOP] - node 2 advanced commitIndex to 3
+2026/05/01 10:16:44 [DEVELOP] - node 2 accepted AppendEntries from leader 0 (term=1 entries=1)
+2026/05/01 10:16:44 [DEVELOP] - node 0 peer 2 caught up to index 4
+2026/05/01 10:16:44 [DEVELOP] - node 0 commitIndex advanced to 4 (replicated on 2/3 nodes)
+2026/05/01 10:16:44 [DEVELOP] - node 0 applying entry index=4 term=1 cmd="put:k:2"
+2026/05/01 10:16:44 [DEVELOP] - node 2 applying entry index=3 term=1 cmd="put:k:1"
+2026/05/01 10:16:44 [DEVELOP] - node 0 appended entry at index 5 (term 1): "put:k:3"
+2026/05/01 10:16:44 [DEVELOP] - node 0 → peer 1: AppendEntries prevIdx=1 entries=4
+2026/05/01 10:16:44 [DEVELOP] - node 0 → peer 1: no reply (err=rpc error: code = Unavailable desc = partitioned)
+2026/05/01 10:16:44 [DEVELOP] - node 0 → peer 2: AppendEntries prevIdx=4 entries=1
+2026/05/01 10:16:44 [DEVELOP] - node 2 appended entry index=5 term=1
+2026/05/01 10:16:44 [DEVELOP] - node 2 advanced commitIndex to 4
+2026/05/01 10:16:44 [DEVELOP] - node 2 accepted AppendEntries from leader 0 (term=1 entries=1)
+2026/05/01 10:16:44 [DEVELOP] - node 0 peer 2 caught up to index 5
+2026/05/01 10:16:44 [DEVELOP] - node 0 commitIndex advanced to 5 (replicated on 2/3 nodes)
+2026/05/01 10:16:44 [DEVELOP] - node 2 applying entry index=4 term=1 cmd="put:k:2"
+2026/05/01 10:16:44 [DEVELOP] - node 0 applying entry index=5 term=1 cmd="put:k:3"
+2026/05/01 10:16:44 [DEVELOP] - node 0 appended entry at index 6 (term 1): "put:k:4"
+2026/05/01 10:16:44 [DEVELOP] - node 0 → peer 2: AppendEntries prevIdx=5 entries=1
+2026/05/01 10:16:44 [DEVELOP] - node 0 → peer 1: AppendEntries prevIdx=1 entries=5
+2026/05/01 10:16:44 [DEVELOP] - node 0 → peer 1: no reply (err=rpc error: code = Unavailable desc = partitioned)
+2026/05/01 10:16:44 [DEVELOP] - node 2 appended entry index=6 term=1
+2026/05/01 10:16:44 [DEVELOP] - node 2 advanced commitIndex to 5
+2026/05/01 10:16:44 [DEVELOP] - node 2 accepted AppendEntries from leader 0 (term=1 entries=1)
+2026/05/01 10:16:44 [DEVELOP] - node 0 peer 2 caught up to index 6
+2026/05/01 10:16:44 [DEVELOP] - node 0 commitIndex advanced to 6 (replicated on 2/3 nodes)
+2026/05/01 10:16:44 [DEVELOP] - node 0 applying entry index=6 term=1 cmd="put:k:4"
+2026/05/01 10:16:44 [DEVELOP] - node 2 applying entry index=5 term=1 cmd="put:k:3"
+2026/05/01 10:16:44 [DEVELOP] - node 0 → peer 2: AppendEntries prevIdx=6 entries=0
+2026/05/01 10:16:44 [DEVELOP] - node 0 → peer 1: AppendEntries prevIdx=1 entries=5
+2026/05/01 10:16:44 [DEVELOP] - node 2 advanced commitIndex to 6
+2026/05/01 10:16:44 [DEVELOP] - node 2 accepted AppendEntries from leader 0 (term=1 entries=0)
+2026/05/01 10:16:44 [DEVELOP] - node 0 peer 2 caught up to index 6
+2026/05/01 10:16:44 [DEVELOP] - node 1 appended entry index=2 term=1
+2026/05/01 10:16:44 [DEVELOP] - node 1 appended entry index=3 term=1
+2026/05/01 10:16:44 [DEVELOP] - node 1 appended entry index=4 term=1
+2026/05/01 10:16:44 [DEVELOP] - node 1 appended entry index=5 term=1
+2026/05/01 10:16:44 [DEVELOP] - node 1 appended entry index=6 term=1
+2026/05/01 10:16:44 [DEVELOP] - node 1 advanced commitIndex to 6
+2026/05/01 10:16:44 [DEVELOP] - node 1 accepted AppendEntries from leader 0 (term=1 entries=5)
+2026/05/01 10:16:44 [DEVELOP] - node 0 peer 1 caught up to index 6
+2026/05/01 10:16:44 [DEVELOP] - node 2 applying entry index=6 term=1 cmd="put:k:4"
+2026/05/01 10:16:44 [DEVELOP] - node 1 applying entry index=1 term=1 cmd="noop"
+2026/05/01 10:16:44 [DEVELOP] - node 1 applying entry index=2 term=1 cmd="put:k:0"
+2026/05/01 10:16:44 [DEVELOP] - node 1 applying entry index=3 term=1 cmd="put:k:1"
+2026/05/01 10:16:44 [DEVELOP] - node 1 applying entry index=4 term=1 cmd="put:k:2"
+2026/05/01 10:16:44 [DEVELOP] - node 1 applying entry index=5 term=1 cmd="put:k:3"
+2026/05/01 10:16:44 [DEVELOP] - node 1 applying entry index=6 term=1 cmd="put:k:4"
+--- PASS: TestStage3_PartitionAndRecovery (0.31s)
+=== RUN   TestStage3_RepeatedLeaderFailures
+2026/05/01 10:16:44 [DEVELOP] - node 1 starting election for term 1
+2026/05/01 10:16:44 [DEVELOP] - node 1 sending RequestVote to peer 2 (term 1)
+2026/05/01 10:16:44 [DEVELOP] - node 1 sending RequestVote to peer 0 (term 1)
+2026/05/01 10:16:44 [DEVELOP] - node 0 received RequestVote from candidate 1 (req.Term=1, our term=0)
+2026/05/01 10:16:44 [DEVELOP] - node 2 received RequestVote from candidate 1 (req.Term=1, our term=0)
+2026/05/01 10:16:44 [DEVELOP] - node 0 stepping down to follower (saw higher term 1)
+2026/05/01 10:16:44 [DEVELOP] - node 2 stepping down to follower (saw higher term 1)
+2026/05/01 10:16:44 [DEVELOP] - node 0 granted vote to 1 (term 1)
+2026/05/01 10:16:44 [DEVELOP] - node 2 granted vote to 1 (term 1)
+2026/05/01 10:16:44 [DEVELOP] - node 1 got vote from peer 0 (2/2 needed)
+2026/05/01 10:16:44 [DEVELOP] - node 1 became leader (term 1, appended noop at index 1)
+2026/05/01 10:16:44 [DEVELOP] - node 1 discarding stale vote reply from peer 2
+2026/05/01 10:16:44 [DEVELOP] - node 1 → peer 0: AppendEntries prevIdx=0 entries=1
+2026/05/01 10:16:44 [DEVELOP] - node 1 → peer 2: AppendEntries prevIdx=0 entries=1
+2026/05/01 10:16:44 [DEVELOP] - node 0 appended entry index=1 term=1
+2026/05/01 10:16:44 [DEVELOP] - node 0 accepted AppendEntries from leader 1 (term=1 entries=1)
+2026/05/01 10:16:44 [DEVELOP] - node 2 appended entry index=1 term=1
+2026/05/01 10:16:44 [DEVELOP] - node 2 accepted AppendEntries from leader 1 (term=1 entries=1)
+2026/05/01 10:16:44 [DEVELOP] - node 1 peer 0 caught up to index 1
+2026/05/01 10:16:44 [DEVELOP] - node 1 commitIndex advanced to 1 (replicated on 2/3 nodes)
+2026/05/01 10:16:44 [DEVELOP] - node 1 peer 2 caught up to index 1
+2026/05/01 10:16:44 [DEVELOP] - node 1 applying entry index=1 term=1 cmd="noop"
+2026/05/01 10:16:44 [DEVELOP] - node 1 appended entry at index 2 (term 1): "put:round:0"
+2026/05/01 10:16:44 [DEVELOP] - node 1 → peer 0: AppendEntries prevIdx=1 entries=1
+2026/05/01 10:16:44 [DEVELOP] - node 1 → peer 2: AppendEntries prevIdx=1 entries=1
+2026/05/01 10:16:44 [DEVELOP] - node 0 appended entry index=2 term=1
+2026/05/01 10:16:44 [DEVELOP] - node 0 advanced commitIndex to 1
+2026/05/01 10:16:44 [DEVELOP] - node 2 appended entry index=2 term=1
+2026/05/01 10:16:44 [DEVELOP] - node 0 accepted AppendEntries from leader 1 (term=1 entries=1)
+2026/05/01 10:16:44 [DEVELOP] - node 2 advanced commitIndex to 1
+2026/05/01 10:16:44 [DEVELOP] - node 2 accepted AppendEntries from leader 1 (term=1 entries=1)
+2026/05/01 10:16:44 [DEVELOP] - node 1 peer 0 caught up to index 2
+2026/05/01 10:16:44 [DEVELOP] - node 1 commitIndex advanced to 2 (replicated on 2/3 nodes)
+2026/05/01 10:16:44 [DEVELOP] - node 1 peer 2 caught up to index 2
+2026/05/01 10:16:44 [DEVELOP] - node 0 applying entry index=1 term=1 cmd="noop"
+2026/05/01 10:16:44 [DEVELOP] - node 1 applying entry index=2 term=1 cmd="put:round:0"
+2026/05/01 10:16:44 [DEVELOP] - node 2 applying entry index=1 term=1 cmd="noop"
+2026/05/01 10:16:44 [DEVELOP] - node 2 starting election for term 2
+2026/05/01 10:16:44 [DEVELOP] - node 2 sending RequestVote to peer 1 (term 2)
+2026/05/01 10:16:44 [DEVELOP] - node 2 sending RequestVote to peer 0 (term 2)
+2026/05/01 10:16:44 [DEVELOP] - node 2 got no reply from peer 1 (err=rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: node 1 has been killed")
+2026/05/01 10:16:44 [DEVELOP] - node 0 received RequestVote from candidate 2 (req.Term=2, our term=1)
+2026/05/01 10:16:44 [DEVELOP] - node 0 stepping down to follower (saw higher term 2)
+2026/05/01 10:16:44 [DEVELOP] - node 0 granted vote to 2 (term 2)
+2026/05/01 10:16:44 [DEVELOP] - node 2 got vote from peer 0 (2/2 needed)
+2026/05/01 10:16:44 [DEVELOP] - node 2 became leader (term 2, appended noop at index 3)
+2026/05/01 10:16:44 [DEVELOP] - node 2 → peer 0: AppendEntries prevIdx=2 entries=1
+2026/05/01 10:16:44 [DEVELOP] - node 2 → peer 1: AppendEntries prevIdx=2 entries=1
+2026/05/01 10:16:44 [DEVELOP] - node 2 → peer 1: no reply (err=rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: node 1 has been killed")
+2026/05/01 10:16:44 [DEVELOP] - node 0 appended entry index=3 term=2
+2026/05/01 10:16:44 [DEVELOP] - node 0 accepted AppendEntries from leader 2 (term=2 entries=1)
+2026/05/01 10:16:44 [DEVELOP] - node 2 peer 0 caught up to index 3
+2026/05/01 10:16:44 [DEVELOP] - node 2 commitIndex advanced to 3 (replicated on 2/3 nodes)
+2026/05/01 10:16:44 [DEVELOP] - node 2 applying entry index=2 term=1 cmd="put:round:0"
+2026/05/01 10:16:44 [DEVELOP] - node 2 applying entry index=3 term=2 cmd="noop"
+2026/05/01 10:16:44 [DEVELOP] - node 2 appended entry at index 4 (term 2): "put:round:1"
+2026/05/01 10:16:44 [DEVELOP] - node 2 → peer 1: AppendEntries prevIdx=2 entries=2
+2026/05/01 10:16:44 [DEVELOP] - node 2 → peer 0: AppendEntries prevIdx=3 entries=1
+2026/05/01 10:16:44 [DEVELOP] - node 2 → peer 1: no reply (err=rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: node 1 has been killed")
+2026/05/01 10:16:44 [DEVELOP] - node 0 appended entry index=4 term=2
+2026/05/01 10:16:44 [DEVELOP] - node 0 advanced commitIndex to 3
+2026/05/01 10:16:44 [DEVELOP] - node 0 accepted AppendEntries from leader 2 (term=2 entries=1)
+2026/05/01 10:16:44 [DEVELOP] - node 2 peer 0 caught up to index 4
+2026/05/01 10:16:44 [DEVELOP] - node 2 commitIndex advanced to 4 (replicated on 2/3 nodes)
+2026/05/01 10:16:44 [DEVELOP] - node 2 applying entry index=4 term=2 cmd="put:round:1"
+2026/05/01 10:16:44 [DEVELOP] - node 0 applying entry index=2 term=1 cmd="put:round:0"
+2026/05/01 10:16:44 [DEVELOP] - node 0 applying entry index=3 term=2 cmd="noop"
+2026/05/01 10:16:44 [DEVELOP] - node 0 starting election for term 3
+2026/05/01 10:16:44 [DEVELOP] - node 0 sending RequestVote to peer 1 (term 3)
+2026/05/01 10:16:44 [DEVELOP] - node 0 sending RequestVote to peer 2 (term 3)
+2026/05/01 10:16:44 [DEVELOP] - node 0 got no reply from peer 2 (err=rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: node 2 has been killed")
+2026/05/01 10:16:44 [DEVELOP] - node 0 got no reply from peer 1 (err=rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: node 1 has been killed")
+2026/05/01 10:16:44 [DEVELOP] - node 0 starting election for term 4
+2026/05/01 10:16:44 [DEVELOP] - node 0 sending RequestVote to peer 2 (term 4)
+2026/05/01 10:16:44 [DEVELOP] - node 0 sending RequestVote to peer 1 (term 4)
+2026/05/01 10:16:44 [DEVELOP] - node 0 got no reply from peer 1 (err=rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: node 1 has been killed")
+2026/05/01 10:16:44 [DEVELOP] - node 0 got no reply from peer 2 (err=rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: node 2 has been killed")
+2026/05/01 10:16:45 [DEVELOP] - node 0 starting election for term 5
+2026/05/01 10:16:45 [DEVELOP] - node 0 sending RequestVote to peer 2 (term 5)
+2026/05/01 10:16:45 [DEVELOP] - node 0 sending RequestVote to peer 1 (term 5)
+2026/05/01 10:16:45 [DEVELOP] - node 0 got no reply from peer 2 (err=rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: node 2 has been killed")
+2026/05/01 10:16:45 [DEVELOP] - node 0 got no reply from peer 1 (err=rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: node 1 has been killed")
+2026/05/01 10:16:45 [DEVELOP] - node 0 starting election for term 6
+2026/05/01 10:16:45 [DEVELOP] - node 0 sending RequestVote to peer 1 (term 6)
+2026/05/01 10:16:45 [DEVELOP] - node 0 sending RequestVote to peer 2 (term 6)
+2026/05/01 10:16:45 [DEVELOP] - node 0 got no reply from peer 2 (err=rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: node 2 has been killed")
+2026/05/01 10:16:45 [DEVELOP] - node 0 got no reply from peer 1 (err=rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: node 1 has been killed")
+2026/05/01 10:16:45 [DEVELOP] - node 0 starting election for term 7
+2026/05/01 10:16:45 [DEVELOP] - node 0 sending RequestVote to peer 2 (term 7)
+2026/05/01 10:16:45 [DEVELOP] - node 0 sending RequestVote to peer 1 (term 7)
+2026/05/01 10:16:45 [DEVELOP] - node 0 got no reply from peer 1 (err=rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: node 1 has been killed")
+2026/05/01 10:16:45 [DEVELOP] - node 0 got no reply from peer 2 (err=rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: node 2 has been killed")
+2026/05/01 10:16:45 [DEVELOP] - node 0 starting election for term 8
+2026/05/01 10:16:45 [DEVELOP] - node 0 sending RequestVote to peer 2 (term 8)
+2026/05/01 10:16:45 [DEVELOP] - node 0 sending RequestVote to peer 1 (term 8)
+2026/05/01 10:16:45 [DEVELOP] - node 0 got no reply from peer 2 (err=rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: node 2 has been killed")
+2026/05/01 10:16:45 [DEVELOP] - node 0 got no reply from peer 1 (err=rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: node 1 has been killed")
+2026/05/01 10:16:45 [DEVELOP] - node 0 starting election for term 9
+2026/05/01 10:16:45 [DEVELOP] - node 0 sending RequestVote to peer 1 (term 9)
+2026/05/01 10:16:45 [DEVELOP] - node 0 sending RequestVote to peer 2 (term 9)
+2026/05/01 10:16:45 [DEVELOP] - node 0 got no reply from peer 2 (err=rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: node 2 has been killed")
+2026/05/01 10:16:45 [DEVELOP] - node 0 got no reply from peer 1 (err=rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: node 1 has been killed")
+2026/05/01 10:16:46 [DEVELOP] - node 0 starting election for term 10
+2026/05/01 10:16:46 [DEVELOP] - node 0 sending RequestVote to peer 1 (term 10)
+2026/05/01 10:16:46 [DEVELOP] - node 0 sending RequestVote to peer 2 (term 10)
+2026/05/01 10:16:46 [DEVELOP] - node 0 got no reply from peer 1 (err=rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: node 1 has been killed")
+2026/05/01 10:16:46 [DEVELOP] - node 0 got no reply from peer 2 (err=rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: node 2 has been killed")
+2026/05/01 10:16:46 [DEVELOP] - node 0 starting election for term 11
+2026/05/01 10:16:46 [DEVELOP] - node 0 sending RequestVote to peer 2 (term 11)
+2026/05/01 10:16:46 [DEVELOP] - node 0 sending RequestVote to peer 1 (term 11)
+2026/05/01 10:16:46 [DEVELOP] - node 0 got no reply from peer 1 (err=rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: node 1 has been killed")
+2026/05/01 10:16:46 [DEVELOP] - node 0 got no reply from peer 2 (err=rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: node 2 has been killed")
+2026/05/01 10:16:46 [DEVELOP] - node 0 starting election for term 12
+2026/05/01 10:16:46 [DEVELOP] - node 0 sending RequestVote to peer 2 (term 12)
+2026/05/01 10:16:46 [DEVELOP] - node 0 sending RequestVote to peer 1 (term 12)
+2026/05/01 10:16:46 [DEVELOP] - node 0 got no reply from peer 1 (err=rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: node 1 has been killed")
+2026/05/01 10:16:46 [DEVELOP] - node 0 got no reply from peer 2 (err=rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: node 2 has been killed")
+2026/05/01 10:16:46 [DEVELOP] - node 0 starting election for term 13
+2026/05/01 10:16:46 [DEVELOP] - node 0 sending RequestVote to peer 2 (term 13)
+2026/05/01 10:16:46 [DEVELOP] - node 0 sending RequestVote to peer 1 (term 13)
+2026/05/01 10:16:46 [DEVELOP] - node 0 got no reply from peer 2 (err=rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: node 2 has been killed")
+2026/05/01 10:16:46 [DEVELOP] - node 0 got no reply from peer 1 (err=rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: node 1 has been killed")
+2026/05/01 10:16:46 [DEVELOP] - node 0 starting election for term 14
+2026/05/01 10:16:46 [DEVELOP] - node 0 sending RequestVote to peer 2 (term 14)
+2026/05/01 10:16:46 [DEVELOP] - node 0 sending RequestVote to peer 1 (term 14)
+2026/05/01 10:16:46 [DEVELOP] - node 0 got no reply from peer 1 (err=rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: node 1 has been killed")
+2026/05/01 10:16:46 [DEVELOP] - node 0 got no reply from peer 2 (err=rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: node 2 has been killed")
+2026/05/01 10:16:47 [DEVELOP] - node 0 starting election for term 15
+2026/05/01 10:16:47 [DEVELOP] - node 0 sending RequestVote to peer 2 (term 15)
+2026/05/01 10:16:47 [DEVELOP] - node 0 sending RequestVote to peer 1 (term 15)
+2026/05/01 10:16:47 [DEVELOP] - node 0 got no reply from peer 1 (err=rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: node 1 has been killed")
+2026/05/01 10:16:47 [DEVELOP] - node 0 got no reply from peer 2 (err=rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: node 2 has been killed")
+2026/05/01 10:16:47 [DEVELOP] - node 0 starting election for term 16
+2026/05/01 10:16:47 [DEVELOP] - node 0 sending RequestVote to peer 1 (term 16)
+2026/05/01 10:16:47 [DEVELOP] - node 0 sending RequestVote to peer 2 (term 16)
+2026/05/01 10:16:47 [DEVELOP] - node 0 got no reply from peer 2 (err=rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: node 2 has been killed")
+2026/05/01 10:16:47 [DEVELOP] - node 0 got no reply from peer 1 (err=rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: node 1 has been killed")
+2026/05/01 10:16:47 [DEVELOP] - node 0 starting election for term 17
+2026/05/01 10:16:47 [DEVELOP] - node 0 sending RequestVote to peer 1 (term 17)
+2026/05/01 10:16:47 [DEVELOP] - node 0 sending RequestVote to peer 2 (term 17)
+2026/05/01 10:16:47 [DEVELOP] - node 0 got no reply from peer 2 (err=rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: node 2 has been killed")
+2026/05/01 10:16:47 [DEVELOP] - node 0 got no reply from peer 1 (err=rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: node 1 has been killed")
+2026/05/01 10:16:47 [DEVELOP] - node 0 starting election for term 18
+2026/05/01 10:16:47 [DEVELOP] - node 0 sending RequestVote to peer 2 (term 18)
+2026/05/01 10:16:47 [DEVELOP] - node 0 sending RequestVote to peer 1 (term 18)
+2026/05/01 10:16:47 [DEVELOP] - node 0 got no reply from peer 2 (err=rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: node 2 has been killed")
+2026/05/01 10:16:47 [DEVELOP] - node 0 got no reply from peer 1 (err=rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: node 1 has been killed")
+2026/05/01 10:16:47 [DEVELOP] - node 0 starting election for term 19
+2026/05/01 10:16:47 [DEVELOP] - node 0 sending RequestVote to peer 1 (term 19)
+2026/05/01 10:16:47 [DEVELOP] - node 0 sending RequestVote to peer 2 (term 19)
+2026/05/01 10:16:47 [DEVELOP] - node 0 got no reply from peer 2 (err=rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: node 2 has been killed")
+2026/05/01 10:16:47 [DEVELOP] - node 0 got no reply from peer 1 (err=rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: node 1 has been killed")
+2026/05/01 10:16:48 [DEVELOP] - node 0 starting election for term 20
+2026/05/01 10:16:48 [DEVELOP] - node 0 sending RequestVote to peer 2 (term 20)
+2026/05/01 10:16:48 [DEVELOP] - node 0 sending RequestVote to peer 1 (term 20)
+2026/05/01 10:16:48 [DEVELOP] - node 0 got no reply from peer 1 (err=rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: node 1 has been killed")
+2026/05/01 10:16:48 [DEVELOP] - node 0 got no reply from peer 2 (err=rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: node 2 has been killed")
+2026/05/01 10:16:48 [DEVELOP] - node 0 starting election for term 21
+2026/05/01 10:16:48 [DEVELOP] - node 0 sending RequestVote to peer 2 (term 21)
+2026/05/01 10:16:48 [DEVELOP] - node 0 sending RequestVote to peer 1 (term 21)
+2026/05/01 10:16:48 [DEVELOP] - node 0 got no reply from peer 2 (err=rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: node 2 has been killed")
+2026/05/01 10:16:48 [DEVELOP] - node 0 got no reply from peer 1 (err=rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: node 1 has been killed")
+    server_test.go:304: node 0: final value not replicated (want "1")
+--- FAIL: TestStage3_RepeatedLeaderFailures (4.38s)
+FAIL
+FAIL	kvraft/server	5.993s
+FAIL

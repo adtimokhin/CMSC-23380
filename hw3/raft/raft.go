@@ -477,7 +477,13 @@ func (rf *Raft) becomeLeader() {
 		rf.matchIndex[i] = 0
 	}
 
-	log.Printf("[DEVELOP] - node %d became leader (term %d, nextIndex init to %d)", rf.id, rf.currentTerm, lastIndex+1)
+	// Append a no-op entry in the current term so we can quickly commit any
+	// entries from previous terms (Raft paper §8: leader completeness).
+	// Without this, advanceCommitIndex would refuse to commit old-term entries.
+	noop := ilog.LogEntry{Index: rf.log.LastIndex() + 1, Term: rf.currentTerm, Command: "noop"}
+	rf.log.Append(noop)
+
+	log.Printf("[DEVELOP] - node %d became leader (term %d, appended noop at index %d)", rf.id, rf.currentTerm, noop.Index)
 	go rf.sendHeartbeats()
 }
 
