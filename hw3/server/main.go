@@ -67,18 +67,20 @@ type Server struct {
 	cfg *config.ClusterConfig
 	rf  *raft.Raft
 
-	mu      sync.Mutex
-	st      *store.Store
-	pending map[int64]*pendingPut // log index → waiting Put handler
+	mu       sync.Mutex
+	st       *store.Store
+	pending  map[int64]*pendingPut // log index → waiting Put handler
+	leaderID int32                 // last known leader, -1 if unknown
 }
 
 func newServer(id int32, cfg *config.ClusterConfig) *Server {
 	commitCh := make(chan raft.ApplyMsg, 100)
 	s := &Server{
-		id:      id,
-		cfg:     cfg,
-		st:      store.New(),
-		pending: make(map[int64]*pendingPut),
+		id:       id,
+		cfg:      cfg,
+		st:       store.New(),
+		pending:  make(map[int64]*pendingPut),
+		leaderID: -1,
 	}
 	s.rf = raft.New(id, cfg, commitCh)
 	go s.applyLoop(commitCh)
@@ -135,18 +137,17 @@ func (s *Server) Get(_ context.Context, req *pb.GetRequest) (*pb.GetResponse, er
 // Stage 3: implement this. You need to track the leader ID as nodes receive
 // AppendEntries RPCs (the leader always sends its own ID in LeaderId).
 func (s *Server) GetPrimary(_ context.Context, _ *pb.Empty) (*pb.GetPrimaryResponse, error) {
+	s.mu.Lock()
+	id := s.leaderID
+	s.mu.Unlock()
 
-	// TODO (Stage 3): Replace the following stub with a real implementation
-	// that updates the leader ID whenever AppendEntries is called (the leader sends its ID in LeaderId).
-
-	_, isLeader := s.rf.GetState()
-
-	if isLeader {
-		return &pb.GetPrimaryResponse{PrimaryId: s.id, PrimaryAddr: s.cfg.Nodes[s.id].ClientAddr}, nil
+	if id < 0 || int(id) >= len(s.cfg.Nodes) {
+		return nil, status.Error(codes.Unavailable, "leader unknown")
 	}
-
-	return nil, status.Error(codes.Unimplemented, "TODO: implement GetPrimary (Stage 3)")
-
+	return &pb.GetPrimaryResponse{
+		PrimaryId:   id,
+		PrimaryAddr: s.cfg.Nodes[id].ClientAddr,
+	}, nil
 }
 
 // ── RaftRPC service (forwarded to raft.Raft) ─────────────────────────────
@@ -156,7 +157,15 @@ func (s *Server) RequestVote(ctx context.Context, req *pb.RequestVoteArgs) (*pb.
 }
 
 func (s *Server) AppendEntries(ctx context.Context, req *pb.AppendEntriesArgs) (*pb.AppendEntriesReply, error) {
-	return s.rf.AppendEntries(ctx, req)
+	reply, err := s.rf.AppendEntries(ctx, req)
+	// Update leaderID only when the sender's term was accepted (not a stale leader).
+	// If the sender was stale, reply.Term > req.Term.
+	if err == nil && reply != nil && reply.Term == req.Term {
+		s.mu.Lock()
+		s.leaderID = req.LeaderId
+		s.mu.Unlock()
+	}
+	return reply, err
 }
 
 func (s *Server) InstallSnapshot(ctx context.Context, req *pb.InstallSnapshotArgs) (*pb.InstallSnapshotReply, error) {
