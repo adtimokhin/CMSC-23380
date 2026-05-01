@@ -60,7 +60,8 @@ type ApplyMsg struct {
 // All exported methods are safe to call from multiple goroutines.
 // Internal methods must be called with mu held, unless noted otherwise.
 type Raft struct {
-	mu sync.Mutex
+	mu        sync.Mutex
+	applyCond *sync.Cond // signalled whenever commitIndex advances
 
 	// ── Persistent state (Figure 2) ────────────────────────────────────────
 	// In a real system these would be written to disk before responding to RPCs.
@@ -153,7 +154,7 @@ func New(id int32, cfg *config.ClusterConfig, commitCh chan ApplyMsg) *Raft {
 func NewPaused(id int32, cfg *config.ClusterConfig, commitCh chan ApplyMsg) *Raft {
 	peers := cfg.Nodes
 	n := len(peers)
-	return &Raft{
+	rf := &Raft{
 		id:         id,
 		peers:      peers,
 		log:        ilog.New(),
@@ -164,6 +165,8 @@ func NewPaused(id int32, cfg *config.ClusterConfig, commitCh chan ApplyMsg) *Raf
 		peerConns:  make(map[int32]pb.RaftRPCClient),
 		commitCh:   commitCh,
 	}
+	rf.applyCond = sync.NewCond(&rf.mu)
+	return rf
 }
 
 // Resume starts the election timer and apply goroutine. Must be called exactly
@@ -237,6 +240,7 @@ func (rf *Raft) GetState() (term int64, isLeader bool) {
 func (rf *Raft) Kill() {
 	rf.mu.Lock()
 	rf.dead = true
+	rf.applyCond.Broadcast()
 	rf.mu.Unlock()
 }
 
@@ -358,6 +362,7 @@ func (rf *Raft) AppendEntries(_ context.Context, req *pb.AppendEntriesArgs) (*pb
 		if last := rf.log.LastIndex(); last < rf.commitIndex {
 			rf.commitIndex = last
 		}
+		rf.applyCond.Signal()
 		log.Printf("[DEVELOP] - node %d advanced commitIndex to %d", rf.id, rf.commitIndex)
 	}
 
@@ -634,6 +639,7 @@ func (rf *Raft) advanceCommitIndex() {
 			log.Printf("[DEVELOP] - node %d commitIndex advanced to %d (replicated on %d/%d nodes)",
 				rf.id, n, count, len(rf.peers))
 			rf.commitIndex = n
+			rf.applyCond.Signal()
 			return
 		}
 	}
@@ -645,11 +651,10 @@ func (rf *Raft) advanceCommitIndex() {
 //
 // TODO (Stage 2): implement this.
 func (rf *Raft) applyLoop() {
-	for !rf.killed() {
-		time.Sleep(10 * time.Millisecond)
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 
-		rf.mu.Lock()
-		var toApply []ApplyMsg
+	for !rf.dead {
 		for rf.lastApplied < rf.commitIndex {
 			rf.lastApplied++
 			entry, ok := rf.log.At(rf.lastApplied)
@@ -657,18 +662,15 @@ func (rf *Raft) applyLoop() {
 				log.Printf("[DEVELOP] - node %d applyLoop: missing entry at index %d", rf.id, rf.lastApplied)
 				break
 			}
-			toApply = append(toApply, ApplyMsg{
-				Index:   entry.Index,
-				Term:    entry.Term,
-				Command: entry.Command,
-			})
-		}
-		rf.mu.Unlock()
-
-		for _, msg := range toApply {
+			msg := ApplyMsg{Index: entry.Index, Term: entry.Term, Command: entry.Command}
 			log.Printf("[DEVELOP] - node %d applying entry index=%d term=%d cmd=%q",
 				rf.id, msg.Index, msg.Term, msg.Command)
+			rf.mu.Unlock()
 			rf.commitCh <- msg
+			rf.mu.Lock()
+		}
+		if !rf.dead {
+			rf.applyCond.Wait()
 		}
 	}
 }

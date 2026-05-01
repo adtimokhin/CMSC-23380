@@ -92,6 +92,16 @@ relative to `HeartbeatInterval`, and why?
 
 **Your answer:**
 
+The reason for randomized timeout is simple - it helps to prevent elections from having 0 leaders. When a single server is elegible to become a leader, all of the servers will give their vote to it. But that is not usually the case.
+
+Servers would consider many other servers up-to-date with their log (term number, and ties are broken with log length). So they would give their vote to any of these servers randomly if they all send the election request simultaneously.
+
+It is possible to end up in a sittuation where multiple candidates get some votes, but not the majority. This sittuation is called liveness failure.
+
+However, if you to add a randomized timeout a single of these candidates will fire before others and will collect all of the eligible votes. If their count is enough (majority) - they become the leader.
+
+Constraint that the range for the election timeout must satisfy - it must be bigger than the heartbeat frequency (and ideally plus some time for the network delay). Otherwise alive leaders might send a heartbeat message too late, and some nodes start an election (which is redundant).
+
 ---
 
 ### Q6 — Read semantics (Lec 5)
