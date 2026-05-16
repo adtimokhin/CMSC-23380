@@ -1,7 +1,10 @@
+<<<<<<< HEAD
 # Created by https://www.toptal.com/developers/gitignore/api/macos,go,goland,windows
 # Edit at https://www.toptal.com/developers/gitignore?templates=macos,go,goland,windows
 
 ### Go ###
+=======
+>>>>>>> 1036ada2be5062576299f75ec6a0e0804dfffac3
 # If you prefer the allow list template instead of the deny list, see community template:
 # https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
 #
@@ -15,6 +18,7 @@
 # Test binary, built with `go test -c`
 *.test
 
+<<<<<<< HEAD
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
 
@@ -215,6 +219,8 @@ hw2/stages# If you prefer the allow list template instead of the deny list, see 
 # Test binary, built with `go test -c`
 *.test
 
+=======
+>>>>>>> 1036ada2be5062576299f75ec6a0e0804dfffac3
 # Code coverage profiles and other test artifacts
 *.out
 coverage.*
