@@ -1,30 +1,17 @@
 # HW3 Reflections
 
-<<<<<<< HEAD
 **Name:** Aleksandr Timokhin
 **GitHub Username:** adtimokhin
 **Hours spent:** 5
-=======
-**Name:**
-**GitHub Username:**
-**Hours spent:**
->>>>>>> 1036ada2be5062576299f75ec6a0e0804dfffac3
 
 ---
 
 ## Stage Progress
 
-<<<<<<< HEAD
 - [x] Stage 1 — Leader election
 - [x] Stage 2 — Log replication
 - [x]  Stage 3 — Safety under failures
 - [] Extension — Log compaction
-=======
-- [ ] Stage 1 — Leader election
-- [ ] Stage 2 — Log replication
-- [ ] Stage 3 — Safety under failures
-- [ ] Extension — Log compaction
->>>>>>> 1036ada2be5062576299f75ec6a0e0804dfffac3
 
 ---
 
