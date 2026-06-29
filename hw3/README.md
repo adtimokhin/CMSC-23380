@@ -1,111 +1,78 @@
-# HW3: Raft-Based Key-Value Store
+# HW3 — Raft-Based Key-Value Store
 
-HW2 had two correctness problems. HW3 fixes both:
+Replaces HW2's heuristic primary-backup replication with a full Raft consensus implementation. The client-facing interface (`kvctl put/get/primary`) is unchanged — only the replication backend differs.
 
 | Problem in HW2 | Fix in HW3 |
 |----------------|------------|
-| Split-brain: two backups can both think they're primary (no term numbers, no quorum) | Raft's term numbers + majority quorum prevent split-brain |
-| Lost writes: write ACKed to client can disappear on leader crash (no log reconciliation) | Raft's log replication ensures committed entries survive |
+| Split-brain: a backup that missed the latest write could still win an election | Raft's election restriction (§5.4.1): a candidate must prove its log is at least as up-to-date as a majority before it can collect votes |
+| Lost writes: a write ACKed to the client could vanish if the acking backup wasn't the one that survived | Raft only commits an entry once it's on a majority of logs, and only ever commits entries from the leader's *current* term (Figure 8 safety argument) |
 
-The client interface (`kvctl put/get/primary`) is **identical to HW2** — only the backend changes.
+Stages 1–3 are complete; the log-compaction/`InstallSnapshot` extension is not implemented.
 
-## Quick Start
+## Quick start
 
 ```bash
-# Run unit tests for provided code — must pass before you start
 go test ./internal/... -v
-
-# Build everything (stubs compile cleanly)
 go build ./...
 ```
 
-## Running the Cluster
-
-### Option A — Docker (recommended)
+### Docker (recommended)
 
 ```bash
-make docker-up          # build image and start all 3 nodes in the background
-make docker-logs        # stream logs from all nodes
-make docker-down        # stop and remove containers
-```
-
-Wait ~300ms for leader election, then use the client against the exposed ports:
-
-```bash
-go run ./client primary localhost:17000  # discover who won the election
+make docker-up                       # build + start all 3 nodes
+make docker-logs
+go run ./client primary localhost:17000   # wait ~300ms for election first
 go run ./client put foo bar localhost:17000
 go run ./client get foo localhost:17001
+make docker-partition NODE=node0     # simulate a network partition
+make docker-heal NODE=node0
+make docker-down
 ```
 
-To simulate a network partition and recovery:
+### Local processes
 
 ```bash
-make docker-partition NODE=node0   # isolate node0 from the cluster
-make docker-heal      NODE=node0   # reconnect node0
+go run ./server --id=0 --config=nodeconfig.json   # :17000 client / :17100 peer
+go run ./server --id=1 --config=nodeconfig.json   # :17001 / :17101
+go run ./server --id=2 --config=nodeconfig.json   # :17002 / :17102
 ```
 
-### Option B — Local processes
+## Architecture
 
-```bash
-# Terminal 1 — node 0
-go run ./server --id=0 --config=nodeconfig.json
+`raft/raft.go` is the Raft state machine — `currentTerm`, `votedFor`, `log`, `commitIndex`, `lastApplied`, `nextIndex`, `matchIndex`, mirroring Figure 2 of the Raft paper. `server/main.go` wires it to the KVStore gRPC service: an apply loop reads committed entries off `commitCh` (`ApplyMsg{Index, Term, Command}`, where `Command` is `"put:key:value"`) and applies them to the store. `internal/log/log.go` (1-indexed, sentinel at index 0) and the proto definitions are provided and unmodified.
 
-# Terminal 2 — node 1
-go run ./server --id=1 --config=nodeconfig.json
+| File | Role |
+|------|------|
+| `raft/raft.go` | Leader election, log replication, safety — the implementation |
+| `server/main.go` | Raft ↔ KVStore glue, apply loop |
+| `internal/log/log.go` | Append-only log (provided) |
+| `proto/raft.proto` | `RequestVote` / `AppendEntries` (provided) |
+| `client/main.go` | `kvctl` CLI — identical to HW2, unmodified |
 
-# Terminal 3 — node 2
-go run ./server --id=2 --config=nodeconfig.json
-```
+## Design decisions actually implemented
 
-Wait ~300ms for leader election, then:
+- **`becomeLeader` appends a no-op entry in the new term immediately on election.** This is what lets the leader commit *prior*-term entries safely: Raft's commit rule only counts a majority once an entry from the *current* term has also reached a majority, otherwise a later leader with a higher term but a shorter log could legally overwrite "committed" data (the Figure 8 scenario — see REFLECTIONS.md Q3 for a full 4-step trace).
+- **`applyLoop` is driven by `sync.Cond`, not a polling sleep.** An earlier version slept 10ms between checks of `commitIndex`; this raced with tests calling `Get` immediately after detecting a new leader, before the apply loop had caught up. Signaling the condition variable whenever `commitIndex` advances applies committed entries within microseconds instead of on the next timer tick.
+- **`AppendEntries` heartbeats always carry `LeaderCommit`**, even when empty. Omitting it from heartbeat-only sends (vs. sends carrying new entries) silently stalled followers' `commitIndex` even though the leader's own state was advancing correctly — passing per-node but not cluster-wide tests was the symptom.
+- **Election timeout is randomized** per node within `[ElectionTimeoutMin, ElectionTimeoutMax]`, strictly above `HeartbeatInterval`. A single fixed timeout shared by all nodes would let every follower start an election in the same round, splitting votes with no majority — a liveness failure, not a safety one.
+- **Reads are served from the local store without going through Raft**, so they are linearizable from the leader (the apply loop writes to the store, *then* signals the waiting RPC) but not from followers, and a partitioned leader that hasn't yet stepped down can still serve a stale read. The read-index protocol (§6.4) would fix this at the cost of one extra round-trip per read — not implemented here.
 
-```bash
-go run ./client primary localhost:17000  # discover who won the election
-go run ./client put foo bar localhost:17000
-go run ./client get foo localhost:17001
-```
+## Common bugs this implementation had to avoid
 
-## Files
+1. Election livelock from non-randomized timeouts.
+2. Holding `mu` across an RPC call — the remote handler needs the same lock, so this deadlocks.
+3. Off-by-one in `nextIndex` (`lastIndex + 1`, not `lastIndex`).
+4. Not stepping down to follower immediately on seeing a higher term, even inside `RequestVote`.
+5. Two goroutines racing to write `commitCh` / advance `lastApplied`.
 
-| File | Status | Description |
-|------|--------|-------------|
-| `internal/clock/` | PROVIDED | Lamport clock (same as HW2) |
-| `internal/store/` | PROVIDED | KV store (same as HW2) |
-| `internal/log/log.go` | PROVIDED | Raft append-only log — do not modify |
-| `config/` | PROVIDED | Cluster config loader |
-| `proto/kvstore.proto` | PROVIDED | Client gRPC service (same as HW2) |
-| `proto/raft.proto` | PROVIDED | RequestVote + AppendEntries definitions |
-| `proto/*.pb.go` | PROVIDED | Generated — do not modify |
-| `nodeconfig.json` | PROVIDED | 3-node config (see Ports table below) |
-| **`raft/raft.go`** | **YOU IMPLEMENT** | Raft state machine |
-| **`server/main.go`** | **YOU IMPLEMENT** | Raft ↔ KVStore integration |
-| `client/main.go` | PROVIDED | kvctl CLI — no changes needed |
-| `REFLECTIONS.md` | YOU FILL IN | Design decisions + theory questions |
+## Stages & ports
 
-## Stages
-
-| Stage | What you implement | Points |
-|-------|--------------------|--------|
+| Stage | Scope | Points |
+|-------|-------|--------|
 | 1 | Leader election: RequestVote, election timer, heartbeats | 35 |
-| 2 | Log replication: AppendEntries, commitIndex, applyLoop, Put handler | 40 |
+| 2 | Log replication: AppendEntries, commitIndex, applyLoop, Put | 40 |
 | 3 | Safety: redirect on non-leader, partition recovery | 25 |
-| Reflection + code quality | | 15 |
-| **Extension** | Log compaction + InstallSnapshot | +20 |
 
-## Common Bugs
+Ports (17000–17002 client, 17100–17102 peer) differ from HW2 to avoid collisions when running both locally.
 
-1. **Election livelock:** All nodes time out at the same instant every round → no leader. Fix: randomize election timeout.
-2. **Holding `mu` during RPCs:** The RPC handler on the other side needs `mu` too → deadlock. Always release the lock before calling any RPC.
-3. **Off-by-one in nextIndex:** `nextIndex` starts at `lastIndex+1`, not `lastIndex`. Double-check with the Figure 2 definition.
-4. **Not stepping down:** When any RPC arrives with a higher term, you must immediately update `currentTerm` and become a follower — even in `RequestVote`.
-5. **Apply loop race:** Only one goroutine should write to `commitCh` and update `lastApplied`.
-
-## Ports
-
-Ports differ from HW2 to avoid conflicts when running via Docker.
-
-| Node | Client port | Peer port |
-|------|-------------|-----------|
-| 0    | 17000       | 17100     |
-| 1    | 17001       | 17101     |
-| 2    | 17002       | 17102     |
+See [REFLECTIONS.md](REFLECTIONS.md) for the full Figure-8 walkthrough, the HW2-vs-Raft lost-write comparison, and the linearizability analysis of leader vs. follower reads.
